@@ -1,0 +1,3225 @@
+---
+title: CAPA Annual Colony Loss Survey Data Analysis
+subtitle: CAPABEESURV
+author: Brendan Daisley
+date: June 14, 2024
+output:
+  html_document:
+    code_folding: show
+    #theme: spacelab
+    theme: default
+    #highlight: monochrome
+    #fig_width: 11
+    #fig_height: 8.5
+    toc: true
+    toc_float: true
+    #toc-expand: false
+    collapse: false
+    toc_depth: 4
+    toc-expand: 3
+    smooth_scroll: true
+    number_sections: false
+    #css: doc.css
+---
+
+```{js, echo=FALSE}
+// JS width changes
+// R Markdown is using Bootstrap 3.3.5, see legacy documentation here
+// https://getbootstrap.com/docs/3.3/css/#grid
+
+// TOC column
+const TOC_col = document.querySelector('div.row>div:not(div+div)');  // First div element under div.row
+TOC_col.classList.replace('col-sm-4', 'col-sm-2');  // sm: Change TOC column width from 33% to 17% of total
+TOC_col.classList.replace('col-md-3', 'col-md-2');  // md: Change TOC column width from 25% to 17% of total
+
+// Main column
+const main_col = document.querySelector('div.row>div+div');  // Second (and last) div element under div.row
+main_col.classList.replace('col-sm-8', 'col-sm-10');  // sm: Change main column width from 67% to 83% of total
+main_col.classList.replace('col-md-9', 'col-md-10');  // md: Change main column width from 75% to 83% of total
+main_col.classList.add('col-sm-offset-2', 'col-md-offset-2')  // sm+md: offset main column by width of TOC (for CSS styling below)
+```
+
+```{css, echo=FALSE}
+/* CSS width changes */
+
+/* Entire page - make wider, default setting is much too narrow */
+/* https://stackoverflow.com/questions/38367392/override-rmarkdown-theme-in-order-to-change-html-page-width/54348996#54348996 */
+div.main-container {
+  width: 1280px !important;
+}
+/* TOC column - move to left edge */
+/* https://medium.com/@TheAtlasTeam/fixed-width-sidebars-in-bootstrap-6bd83db75669 */
+div.row>div:not(div+div) {
+  position: fixed;
+  left: 0px;
+}
+/* TOC container within the TOC column - make narrower */
+#TOC {
+  max-width: 200px !important;
+  width: 200px !important;
+}
+/*-- scss:rules --*/
+.sidebar nav[role="doc-toc"] ul {
+  display: block;
+}
+```
+
+<style type="text/css">
+  .main-container {
+    max-width: 100% !important;
+    margin: auto;
+  }
+</style>
+
+  <br>
+  <b>Related article:</b> Daisley et al. (2024).Antibiotic use, air pollution, and seasonal temperature shifts are strong predictors of honey bee mortality in Canada .<i> In draft</i> <br><br>
+  
+  <b>Related GitHub repository:</b> [https://github.com/bdaisley/CAPABEESURV](https://github.com/bdaisley/CAPABEESURV) <br>
+  
+  The R code provided below was used to generate the following figures and table presented in related article:
+  
+  * Figure 1
+  * Figure 2
+  * Figure 3
+  * Table 1
+
+
+# 1. Load required packages
+
+```{r, message=F, warning=F}
+
+library(sf)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(readxl)
+library(tibble)
+library(future)
+library(eoffice)
+library(ggplot2)
+library(stringr)
+library(cowplot)
+library(ggrepel)
+library(ggridges)
+library(pdftools)
+library(reshape2)
+library(tabulapdf)
+library(packcircles)
+library(rnaturalearth)
+
+theme_set(theme_bw())
+
+sessionInfo()
+```
+
+
+# Acquire datasets
+
+Run the R scripts below to automatically download CAPA surveys, climate datasets, and air quality datasets
+```{r, echo=TRUE, eval=TRUE}
+
+#source("https://bdaisley.github.io/CAPABEESURV/scripts/get_capa_survey_data.R")
+#source("https://bdaisley.github.io/CAPABEESURV/scripts/get_air_quality_data.R")
+#source("https://bdaisley.github.io/CAPABEESURV/scripts/get_climate_data.R")
+
+```
+
+
+# Import datasets
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE,  fig.align="center", fig.width=7, fig.height=7, eval=TRUE}
+
+capa.df <- readxl::read_xlsx("tables/CAPA_survey_data.xlsx", 
+                             sheet="01 - CAPA Survey Data")
+
+capa.df.filt <- capa.df %>% 
+  mutate_at(vars(respondent_colonies_percent,
+                 bac_spring_oxytet, bac_fall_oxytet,
+                 nos_spring_fum,
+                 nos_fall_fum,
+                 var_spring_other,
+                 var_fall_other), as.numeric) %>% 
+  mutate(respondent_colonies_percent = ifelse(
+    respondent_colonies_percent > 100, 
+    100, 
+    respondent_colonies_percent)) %>%
+  mutate(oxytet_spring_fall = (bac_spring_oxytet + 
+                                 bac_fall_oxytet)/2) %>%
+  mutate(fum_spring_fall = (nos_spring_fum + 
+                              nos_fall_fum)/2) %>%
+  mutate(var_spring_fall = (var_spring_other + 
+                              var_fall_other)/2) %>%
+  mutate(winterloss= winterloss_percent)
+
+
+capa.melt <- melt(capa.df.filt , id.var=c("year",
+                                          "province", 
+                                          "winterloss", 
+                                          "raw_total",
+                                          "respondent_colonies")) %>% 
+  mutate_at(vars("raw_total", 
+                 "respondent_colonies"), 
+            as.numeric)
+
+capa.melt.correlations <- melt(capa.df.filt, 
+                               id.var=c("year", 
+                                        "province", 
+                                        "winterloss_percent",
+                                        "raw_total", 
+                                        "respondent_colonies"))  %>% 
+  filter(!is.na(winterloss_percent)) %>% 
+  mutate_at(vars(winterloss_percent, 
+                 "raw_total", 
+                 "respondent_colonies"), 
+            as.numeric) %>%
+  dplyr::rename("winterloss" = winterloss_percent)
+
+```
+
+# Figure 1
+
+## Figure 1A
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.align="center", fig.width=9, fig.height=5.5, eval=TRUE}
+
+capa.melt.g <- capa.melt %>% 
+  filter(grepl("respondent_colonies_percent", 
+               variable)) %>%
+  filter(!is.na(value)) %>%
+  filter(!grepl("TOTAL", 
+                province)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  arrange(province) %>%
+  group_by(province) %>% 
+  mutate_at(vars(value),
+            funs(mean(.))) %>% 
+  ungroup() %>% 
+  droplevels() %>%
+  distinct(province, 
+           .keep_all=TRUE)
+
+#Get province polygons 
+provinces <- rnaturalearth::ne_states(country = "canada", 
+                                      returnclass = "sf") %>% 
+  filter(!grepl("Yukon|Nunavut|North", 
+                name)) %>%
+  st_simplify(., 
+              dTolerance = 5000) %>% #simplify edges for plotting purposes
+  st_transform(., crs=3348) %>% #for 3348 info, see: https://epsg.io/3348
+  mutate(colonies_represented = dplyr::recode(!!!setNames(capa.melt.g$value, 
+                                                          paste0("CA-", 
+                                                                 capa.melt.g$province)), 
+                                              iso_3166_2))
+
+#Get central points for each province
+provinces.points <- provinces %>% 
+  as.data.frame() %>%
+  st_as_sf(coords = c("longitude", 
+                      "latitude"), 
+           crs=4326) %>% 
+  st_transform(crs=3348)
+
+#Plot
+fig1.top.1 <- ggplot() + 
+  geom_sf(data = provinces,
+          aes(fill = colonies_represented),
+          linewidth=0.05, 
+          alpha=1, 
+          colour="white") + 
+  geom_sf(data = provinces.points,
+          colour="black", 
+          size=2) + 
+  ggtitle("CAPA Survey Overview (2015-2023)") +
+  theme_void() + 
+  ggsflabel::geom_sf_label_repel(data= provinces.points, 
+                                 aes(label=name), 
+                                 nudge_x = c(-20,  #BC
+                                             20,   #AB
+                                             -20,  #SK
+                                             15,   #MB
+                                             -25,  #ON
+                                             -50,  #QC
+                                             -1.5, #NB
+                                             50,   #NL
+                                             20,   #NS
+                                             20)*10000, 
+                                 nudge_y = c(-90,  #BC
+                                             70,   #AB
+                                             -75,  #SK
+                                             75,   #MB
+                                             -60,  #ON
+                                             40,   #QC
+                                             -70,  #NB
+                                             50,   #NL
+                                             -40,  #NS
+                                             20)*10000) + 
+  theme(panel.grid = element_blank(), 
+        plot.title=element_text(size=24, 
+                                face="bold",
+                                hjust = 0.5,
+                                vjust=-2),
+        legend.position = "none")
+
+fig1.top.2 <- ggplot() + 
+  geom_sf(data = provinces, 
+          aes(fill = colonies_represented), 
+          linewidth=0.05, 
+          alpha=1, 
+          colour="white") + 
+  geom_sf(data = provinces.points, 
+          colour="black", 
+          size=2) + 
+  ggtitle("CAPA Survey Participation") +
+  scale_fill_gradientn(colours = c("#132B43", 
+                                   "#56B1F7"),
+                       limits = c(40, 100), 
+                       breaks = c(40, 60, 80, 100),
+                       labels = c("40", "60", "80", "100"),
+                       guide = guide_colourbar(direction = "horizontal",
+                                               title = "% participation",
+                                               title.position = "top")) + 
+  theme_void() + 
+  theme(panel.grid = element_blank(), 
+        plot.title=element_text(size=24, 
+                                face="bold", 
+                                hjust = 0.5, 
+                                vjust=-2),
+        legend.position="bottom")
+
+fig1.top.legend <- cowplot::plot_grid(NULL, 
+                                      ggplotGrob(
+                                        fig1.top.2
+                                        )$grobs[[
+                                          which(sapply(ggplotGrob(fig1.top.2)$grobs,
+                                                       function(x) x$name) == "guide-box")
+                                          ]],
+                                      ncol=2, 
+                                      rel_widths=c(0.95, 0.05))       
+
+fig1.a <- cowplot::plot_grid(fig1.top.legend + 
+                               theme(plot.margin = margin(4,3.25,-5,-3, "cm")), 
+                               fig1.top.1, 
+                             ncol=1, 
+                             rel_heights=c(0.2,0.8))
+
+print(fig1.a)
+```
+
+## Figure 1B
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt %>% 
+  filter(grepl("respondent_colonies_percent", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  filter(grepl("TOTAL",
+               province)) %>% 
+  droplevels() %>%
+  mutate(rel_respondent = (respondent_colonies/raw_total)*100)
+
+capa.melt.g <- rbind(capa.melt.g %>% 
+                       mutate(new_respondents = respondent_colonies) %>% 
+                       mutate(rel_group="a_Colonies surveyed"),
+                     capa.melt.g %>% 
+                       mutate(new_respondents = raw_total-respondent_colonies) %>% 
+                       mutate(rel_group="b_Colonies not surveyed"))
+
+#All of Canada
+bar.full <- ggplot(capa.melt.g, 
+                   aes(x=year, 
+                       y=new_respondents)) +
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           stat="identity", 
+           position=position_dodge()) +
+  ylab("Total no. colonies") +
+  scale_x_continuous(breaks=unique(capa.melt.g$year)) +
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) +
+  theme(axis.text.x = element_text(size = 8, 
+                                   angle=45,
+                                   hjust=1), 
+        axis.title = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=8),
+        legend.position = "none")
+
+#---Pie graph 2015---
+pie.2015 <- ggplot(capa.melt.g %>% 
+                     filter(year==2015), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2016---
+pie.2016 <- ggplot(capa.melt.g %>% 
+                     filter(year==2016), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2017---
+pie.2017 <- ggplot(capa.melt.g %>% 
+                     filter(year==2017), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2018---
+pie.2018 <- ggplot(capa.melt.g %>% 
+                     filter(year==2018), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2019---
+pie.2019 <- ggplot(capa.melt.g %>% 
+                     filter(year==2019), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2020---
+pie.2020 <- ggplot(capa.melt.g %>% 
+                     filter(year==2020), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2021---
+pie.2021 <- ggplot(capa.melt.g %>% 
+                     filter(year==2021), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2022---
+pie.2022 <- ggplot(capa.melt.g %>% 
+                     filter(year==2022), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie graph 2023---
+pie.2023 <- ggplot(capa.melt.g %>% 
+                     filter(year==2023), 
+                   aes(x=year, 
+                       y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           linewidth=0.7, 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7", 
+                              "b_Colonies not surveyed" = "grey50")) + 
+  theme(legend.position = "none")
+
+#---Pie legend---
+pie.legend <- ggplot(capa.melt.g %>% 
+                       filter(year==2015), 
+                     aes(x=year, 
+                         y=(new_respondents))) + 
+  geom_bar(aes(group=rel_group, 
+               fill= rel_group), 
+           colour="white", 
+           stat="identity") +
+  coord_polar("y", start=0) + 
+  theme_void() + 
+  scale_fill_manual(values= c("a_Colonies surveyed" = "#3875A7",
+                              "b_Colonies not surveyed" = "grey50"), 
+                    labels = c("Colonies surveyed", 
+                               "Colonies not surveyed")) + 
+  theme(legend.position = "bottom", 
+        legend.title=element_blank())
+
+pie.g <- cowplot::plot_grid(pie.2015,
+                            pie.2016, 
+                            pie.2017,
+                            pie.2018, 
+                            pie.2019, 
+                            pie.2020, 
+                            pie.2021, 
+                            pie.2022,
+                            pie.2023,
+                   ncol=9)
+
+pie.g.legend <- cowplot::plot_grid(ggplotGrob(
+  pie.legend
+  )$grobs[[
+    which(sapply(ggplotGrob(pie.legend)$grobs, 
+                 function(x) x$name) == "guide-box")
+    ]])
+
+pie.full <- cowplot::plot_grid(pie.g.legend + 
+                                 theme(plot.margin = margin(0,0,0,0, "cm")),
+                               pie.g,
+                   ncol=1, 
+                   rel_heights=c(0.1,0.9))
+
+fig1.b <- cowplot::plot_grid(cowplot::plot_grid(NULL, 
+                                                pie.full + 
+                                                  theme(plot.margin = margin(0,0,0,0, "cm")), 
+                                                NULL, 
+                                                ncol=3, 
+                                                rel_widths=c(0.15, 0.8, 0.05)) + 
+                               theme(plot.margin = margin(0.2,0,-0.5,0, "cm")),
+                   bar.full,
+                   ncol=1, 
+                   rel_heights=c(0.25,0.75))
+
+print(fig1.b)
+
+```
+
+## Figure 1C
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=10, eval=TRUE}
+
+
+fig1.c <- readRDS("figures/fig1c.RDS")
+print(fig1.c)
+
+```
+
+## Figure 1D
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=5, eval=TRUE}
+
+capa.melt.g <- capa.melt %>% 
+  filter(grepl("^winterloss", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  mutate(value = ifelse(is.na(value), 
+                        0, 
+                        value)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>%
+  droplevels() %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province), 
+                            "#640000", 
+                            "grey50")) %>% 
+  arrange(year) %>% arrange(province)
+
+#Plot 
+fig1.d <- ggplot(capa.melt.g, 
+                 aes(x=year, 
+                     y=value, 
+                     group=province, 
+                     colour=province)) + 
+  geom_line(aes(linewidth=province)) +
+  scale_colour_manual(values=setNames(capa.melt.g$line_cols, 
+                                      capa.melt.g$province)) +
+  scale_linewidth_manual(values = setNames(capa.melt.g$line_width, 
+                                           capa.melt.g$province)) +
+  directlabels::geom_dl(aes(label=province), 
+                        method=list("last.points", 
+                                    cex=0.75, 
+                                    rot =0, 
+                                    hjust = -.5)) +
+  scale_x_continuous(breaks=unique(capa.melt.g$year)) + 
+  ylab(unique(capa.melt.g$variable)) + 
+  xlab("Year") +
+  ylab("Overwintering loss (%)") +
+  theme_classic() + 
+  theme(axis.text.x = element_text(size = 8, 
+                                   angle=45, 
+                                   hjust=1), 
+        axis.title = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x.bottom = element_text(size=10),
+        legend.position = "none")
+
+fig1.d
+```
+
+## Figure 1E
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=5, eval=TRUE}
+
+capa.melt.g <- capa.melt %>% 
+  filter(grepl("^winterloss", 
+               variable)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>%
+  filter(!grepl("TOTAL", 
+                province)) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("BC", 
+                                   "AB",
+                                   "SK",
+                                   "MB",
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL")))
+
+#Per province
+fig1.e <- ggplot(capa.melt.g, 
+                 aes(x=value, 
+                     y=province,
+                     fill=stat(x))) +
+  geom_density_ridges_gradient(scale = 1.7, 
+                               panel_scaling = TRUE,
+                               rel_min_height = 0.0005,
+                               colour="black",
+                               linewidth = 0.3) +
+  scale_fill_gradientn(colours=colorRampPalette(c("white",
+                                                  "darkred"))(100)) +
+  geom_vline(xintercept=15, 
+             linewidth = 0.8, 
+             linetype = "dotted", 
+             colour="red") +
+  annotate(geom="text", 
+           x = 15, 
+           y = 12.9, 
+           label="Limit of \nsustainability", 
+           colour="red") +
+  coord_cartesian(ylim = c(1,10.5), 
+                  clip = 'off') +
+  xlab("Overwintering loss (%)") +
+  ylab("Province") +
+  theme(plot.margin = unit(c(2.5,1,1,1), 
+                           "lines")) +
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 8), 
+        axis.title = element_text(size=10),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=8),
+        legend.position = "none")
+
+fig1.e
+
+```
+
+## Figure 1 (Full panel)
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=9.1, fig.height=11.7, eval=TRUE}
+
+fig1.bottom.left <- cowplot::plot_grid(fig1.b, 
+                                       fig1.c, 
+                                       ncol=1, 
+                                       labels=c('B', "C"), 
+                                       rel_heights=c(0.45, 0.55))
+
+
+fig1.bottom.right <- cowplot::plot_grid(fig1.e,
+                                        cowplot::plot_grid(fig1.d,
+                                                           NULL,
+                                                           ncol=2, 
+                                                           rel_widths=c(0.9,0.1)), 
+                                        ncol=1, 
+                                        labels=c('D', "E"), 
+                                        rel_heights=c(0.55, 0.45))
+fig1.bottom <- cowplot::plot_grid(fig1.bottom.left,
+                                  fig1.bottom.right, ncol=2)
+
+fig1.a <- cowplot::plot_grid(fig1.top.legend + 
+                               theme(plot.margin = margin(3,3,-5,-3, "cm")), 
+                             fig1.top.1, 
+                             ncol=1, 
+                             rel_heights=c(0.2,0.8))
+
+fig1.full <- cowplot::plot_grid(fig1.a +
+                                  theme(plot.margin = unit(c(-0.04, -0.04, -0.04, -0.04), 
+                                                           "null")),
+                                fig1.bottom, 
+                                ncol=1, 
+                                rel_heights=c(0.5, 0.5))
+print(fig1.full)
+
+```
+
+
+# Figure 2
+
+## Setup
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+capa.df.filt <- capa.df %>% 
+  mutate_at(vars(respondent_colonies_percent,
+                 bac_spring_oxytet, 
+                 bac_fall_oxytet,
+                 nos_spring_fum, 
+                 nos_fall_fum, 
+                 var_spring_other,
+                 var_fall_other), 
+            as.numeric) %>% 
+  mutate(respondent_colonies_percent = ifelse(
+    respondent_colonies_percent > 100, 100, 
+    respondent_colonies_percent)) %>% 
+  mutate(oxytet_spring_fall = (bac_spring_oxytet + 
+                                 bac_fall_oxytet)/2) %>%
+  mutate(fum_spring_fall = (nos_spring_fum + 
+                              nos_fall_fum)/2) %>%
+  mutate(var_spring_fall = (var_spring_other + 
+                              var_fall_other)/2) %>%
+  mutate(winterloss= winterloss_percent)
+
+capa.melt <- melt(capa.df.filt , 
+                  id.var=c("year",
+                           "province",
+                           "winterloss",
+                           "raw_total",
+                           "respondent_colonies")) %>% 
+  mutate_at(vars("raw_total", 
+                 "respondent_colonies"), 
+            as.numeric)
+
+capa.melt.correlations <- melt(capa.df.filt, 
+                               id.var=c("year", 
+                                        "province",
+                                        "winterloss_percent",
+                                        "raw_total",
+                                        "respondent_colonies"))  %>% 
+  filter(!is.na(winterloss_percent)) %>% 
+  mutate_at(vars(winterloss_percent, "raw_total",
+                 "respondent_colonies"), 
+            as.numeric) %>%
+  dplyr::rename("winterloss" = winterloss_percent)
+
+
+```
+
+## Figure 2A
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("oxytet_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL",
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL",
+                                   province), 
+                             1.5, 
+                             0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province),
+                            "#2980B9",
+                            "grey50")) %>% 
+  arrange(year) %>% 
+  arrange(province)
+
+fig2.a <- ggplot(capa.melt.g, 
+                 aes(x=year,
+                     y=value,
+                     group=province,
+                     colour=province)) + 
+  geom_line(aes(linewidth=province)) +
+  ylim(-2,86) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  scale_colour_manual(values=setNames(capa.melt.g$line_cols, 
+                                      capa.melt.g$province)) +
+  scale_linewidth_manual(values = setNames(capa.melt.g$line_width, 
+                                           capa.melt.g$province)) +
+  directlabels::geom_dl(aes(label=province), 
+                        method=list("last.points",
+                                    cex=0.5, 
+                                    rot =0, 
+                                    hjust = 0)) + 
+  ylab(unique(capa.melt.g$variable)[1]) + 
+  xlab("Year") + 
+  theme(legend.position = "none") + 
+  ylab("Oxytetracycline use (%)") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  theme(axis.text.x = element_text(angle=45, 
+                                   hjust=1), 
+        axis.text = element_text(size=8), 
+        axis.title = element_text(size=10),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+fig2.a
+
+```
+
+## Figure 2B
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("fum_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB",
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE",
+                                   "NS", 
+                                   "NL"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             1.5, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "green4", 
+                            "grey50")) %>% 
+  arrange(year) %>% 
+  arrange(province)
+
+fig2.b <-ggplot(capa.melt.g, 
+                aes(x=year, 
+                    y=value, 
+                    group=province, 
+                    colour=province)) + 
+  geom_line(aes(linewidth=province)) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  scale_colour_manual(values=setNames(capa.melt.g$line_cols, 
+                                      capa.melt.g$province)) +
+  scale_linewidth_manual(values = setNames(capa.melt.g$line_width, 
+                                           capa.melt.g$province)) +
+  directlabels::geom_dl(aes(label=province), 
+                        method=list("last.points", 
+                                    cex=0.5, 
+                                    rot =0,
+                                    hjust = 0)) + 
+  ylab(unique(capa.melt.g$variable)[1]) + 
+  xlab("Year") + theme(legend.position = "none") +
+  ylab("Fumagillin use (%)") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  theme(axis.text.x = element_text(angle=45, 
+                                   hjust=1), 
+        axis.text = element_text(size=8), axis.title = element_text(size=10),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+fig2.b
+
+```
+
+## Figure 2C
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("var_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC",
+                                   "AB", 
+                                   "SK", 
+                                   "MB",
+                                   "ON", 
+                                   "QC",
+                                   "NB", 
+                                   "PE",
+                                   "NS",
+                                   "NL"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province),
+                             1.5, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province),
+                            "#AC8300", 
+                            "grey50")) %>% 
+  arrange(year) %>% 
+  arrange(province)
+
+fig2.c <- ggplot(capa.melt.g, 
+                 aes(x=year, 
+                     y=value, 
+                     group=province, 
+                     colour=province)) + 
+  geom_line(aes(linewidth=province)) +
+  scale_y_continuous(limits=c(-2,110),
+                     breaks=c(0,25,50,75,100)) +
+  scale_colour_manual(values=setNames(capa.melt.g$line_cols, 
+                                      capa.melt.g$province)) +
+  scale_linewidth_manual(values = setNames(capa.melt.g$line_width, 
+                                           capa.melt.g$province)) +
+  directlabels::geom_dl(aes(label=province), 
+                        method=list("last.points",
+                                    cex=0.5, 
+                                    rot =0, 
+                                    hjust = 0)) + 
+  ylab(unique(capa.melt.g$variable)[1]) + 
+  xlab("Year") + 
+  theme(legend.position = "none") + 
+  ylab("Miticide use (%)") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        axis.text = element_text(size=8), 
+        axis.title = element_text(size=10),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+fig2.c
+
+```
+
+## Figure 2D
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("oxytet_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC", 
+                                   "AB", 
+                                   "SK",
+                                   "MB", 
+                                   "ON", 
+                                   "QC",
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>%
+  mutate(before_after = ifelse(year<=2018, 
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after,
+                               levels=c("Before", 
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL",
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "#2980B9", 
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(grepl("TOTAL", 
+               province)) %>% 
+  mutate(province= gsub("TOTAL", 
+                        "ANNUAL MEANS", 
+                        province))
+
+#-------------STATS
+stat.oxytet.before.after <- capa.melt.g %>% 
+  group_by(before_after) %>% 
+  summarise(mean = round(mean(value,
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value, 
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>%
+  arrange(mean)
+
+print(stat.oxytet.before.after)
+
+readr::write_tsv(stat.oxytet.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>% 
+  rstatix::shapiro_test(var=value)
+
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value,
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>%
+  filter(var!=0) %>% 
+  group_by(province) %>% 
+  rstatix::wilcox_test(value ~ before_after, 
+                       p.adjust.method = "BH",
+                       detailed=TRUE) %>% 
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4),
+                        scientific = FALSE)) 
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+#Remove cases where there is no variance (i.e. all value equal zero or represent 'NA' observations)
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(before_after) %>% 
+  rstatix::get_summary_stats(value, 
+                             type = c("full"))
+
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+fig2.d <- ggplot(capa.melt.g,
+                 aes(x=before_after, 
+                     y=value)) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  facet_grid(~province) + 
+  ylab("Oxytetracycline use (%)") + 
+  geom_boxplot(aes(), 
+               fill="#2980B9", 
+               alpha=0.5,
+               outliers=FALSE) + 
+  geom_point(position=position_jitter(width=0.05), 
+             size=2, 
+             alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1, 
+                             label="p_str", 
+                             hide.ns=FALSE, 
+                             size=2.5, 
+                             bracket.size=0.1,
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001) +
+  theme(axis.text.x = element_text(size = 10,
+                                   angle=90, 
+                                   vjust=0.5),
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8), 
+        axis.title.x = element_blank(),
+        strip.background = element_rect(fill=scales::alpha("#2980B9", 
+                                                           0.5)),
+        strip.text = element_text(colour = 'black', 
+                                  size=8, 
+                                  face="bold"))
+
+fig2.d
+```
+
+## Figure 2E
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("oxytet_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province,
+                          levels=c("TOTAL",
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  mutate(before_after = ifelse(year<=2018, 
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after, 
+                               levels=c("Before", 
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province),
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "#2980B9",
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(!grepl("TOTAL", 
+                province))
+
+#-------------STATS
+stat.oxytet.before.after <- capa.melt.g %>% 
+  group_by(before_after) %>% 
+  summarise(mean = round(mean(value,
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value,
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>% 
+  arrange(mean)
+
+stat.oxytet.before.after
+
+readr::write_tsv(stat.oxytet.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  rstatix::shapiro_test(var=value)
+
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province) %>% 
+  rstatix::wilcox_test(value ~before_after, 
+                       p.adjust.method = "BH", 
+                       detailed=TRUE) %>% 
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4),
+                        scientific = FALSE))
+
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+
+#Remove cases where there is no variance (i.e. all value equal zero or represent 'NA' observations)
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value,
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province, 
+           before_after) %>% 
+  rstatix::get_summary_stats(value, 
+                             type = c("full"))
+
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+fig2.e <- ggplot(capa.melt.g, 
+                 aes(x=before_after, 
+                     y=value)) + 
+  facet_grid(~province) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  geom_boxplot(aes(), 
+               fill="#2980B9", 
+               alpha=0.5, 
+               outliers=FALSE) +
+  geom_point(position=position_jitter(width=0.15), 
+             size=1, 
+             alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1,
+                             label="p_str", 
+                             hide.ns=FALSE, 
+                             size=2.5, 
+                             bracket.size=0.1, 
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001, 
+                             bracket.nudge.y=-7, 
+                             tip.length = 0.015) + 
+  theme(axis.text.x = element_text(size = 10, 
+                                   angle=90, 
+                                   vjust = 0.5), 
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        strip.background = element_rect(fill=scales::alpha("#2980B9", 0.5)),
+        strip.text = element_text(colour = 'black', size=8, face="bold"))
+
+fig2.e
+```
+
+## Figure 2F
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("fum_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province = factor(province, 
+                           levels=c("TOTAL",
+                                    "BC", 
+                                    "AB", 
+                                    "SK", 
+                                    "MB", 
+                                    "ON", 
+                                    "QC", 
+                                    "NB", 
+                                    "PE", 
+                                    "NS", 
+                                    "NL"))) %>%
+  mutate(before_after = ifelse(year<=2018, 
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after,
+                               levels=c("Before",
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "green4", 
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(grepl("TOTAL", 
+               province)) %>% 
+  mutate(province= gsub("TOTAL", 
+                        "ANNUAL MEANS", 
+                        province))
+
+#-------------STATS
+stat.fum.before.after <- capa.melt.g %>% 
+  group_by(before_after) %>% 
+  summarise(mean = round(mean(value, 
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value, 
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>% 
+  arrange(mean)
+stat.fum.before.after
+
+readr::write_tsv(stat.fum.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>% 
+  rstatix::shapiro_test(var=value)
+
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province) %>% 
+  rstatix::wilcox_test(value ~ before_after, 
+                       p.adjust.method = "BH", 
+                       detailed=TRUE) %>% 
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4),
+                        scientific = FALSE)) 
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+#Remove cases where there is no variance (i.e. all value equal zero or represent 'NA' observations)
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(before_after) %>% 
+  rstatix::get_summary_stats(value,
+                             type = c("full"))
+
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+fig2.f <- ggplot(capa.melt.g, 
+                 aes(x=before_after, 
+                     y=value)) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  ylab("Fumagillin use (%)") + 
+  facet_grid(~province) + 
+  geom_boxplot(aes(), 
+               fill="green4", 
+               alpha=0.5,
+               outliers=FALSE) + 
+  geom_point(position=position_jitter(width=0.05),
+             size=2, 
+             alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1, 
+                             label="p_str",
+                             hide.ns=FALSE, 
+                             size=2.5,
+                             bracket.size=0.1, 
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001) +
+  theme(axis.text.x = element_text(size = 10,
+                                   angle=90, 
+                                   vjust=0.5), 
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8),
+        axis.title.x = element_blank(),
+        strip.background =element_rect(fill=scales::alpha("green4", 0.5)),
+        strip.text = element_text(colour = 'black', size=8, face="bold"))
+
+fig2.f
+```
+
+## Figure 2G
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("fum_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL",
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB",
+                                   "ON",
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>%
+  mutate(before_after = ifelse(year<=2018, 
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after, 
+                               levels=c("Before", 
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province),
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province),
+                            "green4",
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(!grepl("TOTAL",
+                province))
+
+#-------------STATS
+stat.fum.before.after <- capa.melt.g %>% 
+  group_by(before_after, 
+           province) %>%
+  summarise(mean = round(mean(value, 
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value, 
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>% 
+  arrange(mean)
+stat.fum.before.after
+
+readr::write_tsv(stat.fum.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>% 
+  rstatix::shapiro_test(var=value)
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province) %>% 
+  rstatix::wilcox_test(value ~ before_after, 
+                       p.adjust.method = "BH", 
+                       detailed=TRUE) %>%
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4), 
+                        scientific = FALSE)) 
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province, 
+           before_after) %>% 
+  rstatix::get_summary_stats(value, 
+                             type = c("full"))
+
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+
+fig2.g <- ggplot(capa.melt.g, 
+                 aes(x=before_after, 
+                     y=value)) + 
+  facet_grid(~province) +
+  scale_y_continuous(limits=c(-2,110), 
+                     breaks=c(0,25,50,75,100)) +
+  geom_boxplot(aes(),
+               fill="green4", 
+               alpha=0.5, 
+               outliers=FALSE) + 
+  geom_point(position=position_jitter(width=0.15), 
+             size=1, 
+             alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1,
+                             label="p_str",
+                             hide.ns=FALSE, 
+                             size=2.5, bracket.size=0.1,
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001,
+                             bracket.nudge.y=-7, 
+                             tip.length = 0.015) +
+  theme(axis.text.x = element_text(size = 10, 
+                                   angle=90, 
+                                   vjust = 0.5), 
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8),
+        axis.title.y = element_blank(), 
+        axis.title.x = element_blank(),
+        strip.background =element_rect(fill=scales::alpha("green4", 0.5)),
+        strip.text = element_text(colour = 'black',
+                                  size=8, 
+                                  face="bold"))
+fig2.g
+
+```
+
+## Figure 2H
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
+
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("var_spring_fall", 
+               variable)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province,
+                          levels=c("TOTAL",
+                                   "BC",
+                                   "AB", 
+                                   "SK", 
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>%
+  mutate(before_after = ifelse(year<=2018, 
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after,
+                               levels=c("Before", 
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province), 
+                            "#AC8300", 
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(grepl("TOTAL", 
+               province)) %>% 
+  mutate(province= gsub("TOTAL", 
+                        "ANNUAL MEANS", province))
+
+#-------------STATS
+stat.var.before.after <- capa.melt.g %>% 
+  group_by(before_after) %>% 
+  summarise(mean = round(mean(value, 
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value, 
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>% 
+  arrange(mean)
+stat.var.before.after
+
+readr::write_tsv(stat.var.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>% 
+  rstatix::shapiro_test(var=value)
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value,
+                        na.rm=TRUE)==0,
+                    0, 1)) %>% ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province) %>% 
+  rstatix::wilcox_test(value ~before_after,
+                       p.adjust.method = "BH",
+                       detailed=TRUE) %>% 
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4),  
+                        scientific = FALSE)) 
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+#Remove cases where there is no variance (i.e. all value equal zero or represent 'NA' observations)
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 
+                    0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(before_after) %>% 
+  rstatix::get_summary_stats(value, 
+                             type = c("full"))
+
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+fig2.h <- ggplot(capa.melt.g, 
+                 aes(x=before_after,
+                     y=value)) +
+  scale_y_continuous(limits=c(-2,110),
+                     breaks=c(0,25,50,75,100)) +
+  ylab("Miticide use (%)") + 
+  facet_grid(~province) + 
+  geom_boxplot(aes(),
+               fill="#AC8300", 
+               alpha=0.5, 
+               outliers=FALSE) +
+  geom_point(position=position_jitter(width=0.05), 
+             size=2, alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1, 
+                             label="p_str", 
+                             hide.ns=FALSE, 
+                             size=2.5, 
+                             bracket.size=0.1, 
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001) +
+  theme(axis.text.x = element_text(size = 10, 
+                                   angle=90, 
+                                   vjust=0.5), 
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8),
+        axis.title.x = element_blank(),
+        strip.background =element_rect(fill=scales::alpha("#AC8300", 0.5)),
+        strip.text = element_text(colour = 'black',
+                                  size=8, 
+                                  face="bold"))
+
+fig2.h
+
+```
+
+## Figure 2I
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("var_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value),
+            as.numeric) %>% 
+  droplevels() %>% mutate(province= factor(province, 
+                                           levels=c("TOTAL", 
+                                                    "BC",
+                                                    "AB", 
+                                                    "SK", 
+                                                    "MB", 
+                                                    "ON", 
+                                                    "QC", 
+                                                    "NB", 
+                                                    "PE", 
+                                                    "NS", 
+                                                    "NL"))) %>%
+  mutate(before_after = ifelse(year<=2018,
+                               "Before", 
+                               "After")) %>%
+  mutate(before_after = factor(before_after,
+                               levels=c("Before",
+                                        "After"))) %>%
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province),
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "#AC8300", 
+                            "grey50")) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(!grepl("TOTAL", 
+                province))
+
+#-------------STATS
+stat.var.before.after <- capa.melt.g %>% 
+  group_by(before_after) %>% 
+  summarise(mean = round(mean(value, 
+                              na.rm=TRUE), 2),
+            std_deviation = round(sd(value, 
+                                     na.rm=TRUE), 2),
+            std_error = round((std_deviation / sqrt(n())), 2)) %>% 
+  arrange(mean)
+stat.var.before.after
+
+readr::write_tsv(stat.var.before.after, "tables/stats_oxytet_before_after.tsv")
+
+#-------------PLOT
+norm.test <- capa.melt.g %>%
+  rstatix::shapiro_test(var=value)
+
+pwc1 <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 
+                    0, 1)) %>% ungroup() %>%
+  filter(var!=0) %>% 
+  group_by(province) %>%
+  rstatix::wilcox_test(value ~before_after,
+                       p.adjust.method = "BH",
+                       detailed=TRUE) %>% 
+  rstatix::add_xy_position() %>% 
+  mutate(p_str = format(round(p, 4), 
+                        scientific = FALSE)) 
+
+pwc1.ft <- flextable::flextable(pwc1)
+pwc1.ft <- flextable::theme_vanilla(pwc1.ft)
+pwc1.ft
+
+#Remove cases where there is no variance (i.e. all value equal zero or represent 'NA' observations)
+summary.stats <- capa.melt.g %>% 
+  group_by(province) %>% 
+  mutate(var=ifelse(var(value, 
+                        na.rm=TRUE)==0, 
+                    0, 1)) %>% 
+  ungroup() %>% 
+  filter(var!=0) %>% 
+  group_by(province, 
+           before_after) %>% 
+  rstatix::get_summary_stats(value, 
+                             type = c("full"))
+
+ft <- flextable::flextable(summary.stats)
+ft <- flextable::theme_vanilla(ft)
+ft
+
+fig2.i <- ggplot(capa.melt.g, 
+                 aes(x=before_after,
+                     y=value)) + 
+  facet_grid(~province) +
+  scale_y_continuous(limits=c(-2,110),
+                     breaks=c(0,25,50,75,100)) +
+  geom_boxplot(aes(), 
+               fill="#AC8300",
+               alpha=0.5,
+               outliers=FALSE) + 
+  geom_point(position=position_jitter(width=0.15), 
+             size=1, 
+             alpha=0.5) + 
+  ggpubr::stat_pvalue_manual(pwc1,
+                             label="p_str",
+                             hide.ns=FALSE,
+                             size=2.5, 
+                             bracket.size=0.1, 
+                             vjust=-0.5, 
+                             step.increase=0.0000000000001,
+                             bracket.nudge.y=-7, 
+                             tip.length = 0.015) + 
+  theme(axis.text.x = element_text(size = 10, 
+                                   angle=90, 
+                                   vjust = 0.5), 
+        axis.title = element_text(size=10),
+        axis.text.y = element_text(size=8),
+        axis.title.y = element_blank(), 
+        axis.title.x = element_blank(),
+        strip.background =element_rect(fill=scales::alpha("#AC8300",0.5)),
+        strip.text = element_text(colour = 'black', 
+                                  size=8, 
+                                  face="bold"))
+
+fig2.i
+
+
+```
+
+## Figure 2 (Full panel)
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=9.1, fig.height=11.7, eval=TRUE}
+
+
+#::::::::::::::::::::
+# Figure 2
+#::::::::::::::::::::
+
+fig2.top <-cowplot::plot_grid(fig2.a,
+                              NULL,
+                              fig2.b,
+                              NULL,
+                              fig2.c,
+                              NULL,
+                              ncol=6, labels=c('A', 
+                                               '', 
+                                               'B', 
+                                               '', 
+                                               'C', 
+                                               ''), 
+                              rel_widths=c(0.3, 
+                                           0.03, 
+                                           0.3, 
+                                           0.03,
+                                           0.3, 
+                                           0.03))
+
+fig2.bottom.left <-cowplot::plot_grid(
+  fig2.d +
+    theme(axis.text.x = element_text(angle=90, 
+                                     hjust=1), 
+          axis.text = element_text(size=8), 
+          axis.title = element_text(size=10)),
+  fig2.f +
+    theme(axis.text.x = element_text(angle=90, 
+                                     hjust=1), 
+          axis.text = element_text(size=8), 
+          axis.title = element_text(size=10)),
+  fig2.h +
+    theme(axis.text.x = element_text(angle=90, 
+                                     hjust=1), 
+          axis.text = element_text(size=8), 
+          axis.title = element_text(size=10)),
+  ncol=1, 
+  labels=c('D', 
+           'F', 
+           'H'))
+
+fig2.bottom.right <-cowplot::plot_grid(
+  fig2.e + 
+    theme(
+      axis.text.x = element_text(angle=90, 
+                                 hjust=1), 
+      axis.text = element_text(size=8), 
+      axis.title = element_text(size=10)),
+  fig2.g + 
+    theme(axis.text.x = element_text(angle=90,
+                                     hjust=1),
+          axis.text = element_text(size=8), 
+          axis.title = element_text(size=10)),
+  fig2.i +
+    theme(axis.text.x = element_text(angle=90, 
+                                     hjust=1), 
+          axis.text = element_text(size=8), 
+          axis.title = element_text(size=10)),
+  ncol=1, 
+  labels=c('E',
+           'G', 
+           'I'))
+
+fig2.bottom <- cowplot::plot_grid(
+  fig2.bottom.left,
+  fig2.bottom.right, 
+  ncol=2, 
+  rel_widths=c(0.25,
+               0.75))
+
+fig2.full <-cowplot::plot_grid(fig2.top, 
+                               fig2.bottom,
+                               ncol=1, 
+                               rel_heights=c(0.3, 
+                                             0.7))
+
+print(fig2.full)
+
+
+```
+
+
+# Figure 3
+
+## Setup
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=5, fig.height=5, eval=TRUE}
+
+setwd("C:/Users/Brendan Daisley/Documents/GUELPH/00-Guelph-Projects/REVIEW---2024---Antibiotics-Bee-Survey")
+
+capa.df.filt <- capa.df %>% 
+  mutate_at(vars(respondent_colonies_percent,
+                 bac_spring_oxytet,
+                 bac_fall_oxytet,
+                 nos_spring_fum, 
+                 nos_fall_fum, 
+                 var_spring_other, 
+                 var_fall_other), 
+            as.numeric) %>% 
+  mutate(respondent_colonies_percent = ifelse(
+    respondent_colonies_percent > 100,
+    100, respondent_colonies_percent)) %>% 
+  mutate(oxytet_spring_fall = (bac_spring_oxytet + 
+                                 bac_fall_oxytet)/2) %>%
+  mutate(fum_spring_fall = (nos_spring_fum +
+                              nos_fall_fum)/2) %>%
+  mutate(var_spring_fall = (var_spring_other + 
+                              var_fall_other)/2) %>%
+  mutate(winterloss= winterloss_percent)
+
+capa.melt <- melt(capa.df.filt ,
+                  id.var=c("year",
+                           "province",
+                           "winterloss",
+                           "raw_total", 
+                           "respondent_colonies")) %>% 
+  mutate_at(vars("raw_total",
+                 "respondent_colonies"), 
+            as.numeric)
+
+capa.melt.correlations <- melt(capa.df.filt, 
+                               id.var=c("year",
+                                        "province",
+                                        "winterloss_percent",
+                                        "raw_total", 
+                                        "respondent_colonies"))  %>% 
+  filter(!is.na(winterloss_percent)) %>% 
+  mutate_at(vars(winterloss_percent, 
+                 "raw_total", 
+                 "respondent_colonies"),
+            as.numeric) %>%
+  dplyr::rename("winterloss" = winterloss_percent)
+
+```
+
+
+## Figure 3E
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("oxytet_spring_fall|^winterloss", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC", 
+                                   "AB", 
+                                   "SK",
+                                   "MB",
+                                   "ON", 
+                                   "QC",
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  filter(grepl("TOTAL",
+               province))
+
+#----------------------------------------------------
+#Set functions for scaling secondary axis
+#----------------------------------------------------
+scale_fun <- function(x, scale, shift){
+  return ((x)*scale - shift)
+}
+scale_fun_inv <- function(x, scale, shift){
+  return ((x + shift)/scale)
+}
+
+#---------------------------------------------------- #Specify min/max of left (y1) and right (y2) y-axes
+#Determined below values via inspection of min()/max() variables of interest
+
+y1_min.left  <- 10
+y1_max.left  <- 60
+
+y2_min <- 0
+y2_max <- 50
+
+#----------------------------------------------------
+scale_var.left = (y2_max - y2_min)/(y1_max.left - y1_min.left)
+shift_var.left = y1_min.left - y2_min
+#----------------------------------------------------
+
+
+#Plot
+capa.melt.g.x <- cbind((capa.melt.g %>% 
+                          filter(grepl("^winterloss", 
+                                       variable)) %>% 
+                          dplyr::select(year, 
+                                        province,
+                                        value) %>% 
+                          dplyr::rename(winterloss = "value")),
+                       (capa.melt.g %>% 
+                          filter(!grepl("^winterloss", 
+                                        variable)) %>% 
+                          dplyr::select(value) %>% 
+                          dplyr::rename(usage = "value"))) %>% 
+  as.data.frame()
+
+fig3.a <- ggplot(capa.melt.g.x,
+                 aes(x=year, 
+                     y=usage)) + 
+  geom_smooth(method='loess',
+              span=1.5,
+              colour="#2980B9",
+              fill="#ADD3ED", 
+              alpha=0.5,
+              size=0.7) +
+  geom_smooth(aes(y = scale_fun_inv(winterloss,
+                                    scale_var.left, 
+                                    shift_var.left)), 
+              method='loess', 
+              span=1.5,
+              colour="black",
+              fill="grey50", 
+              alpha=0.2, 
+              size=0.7) +
+  geom_point(colour="#2980B9") +
+  geom_point(aes(y = scale_fun_inv(winterloss,
+                                   scale_var.left,
+                                   shift_var.left)), 
+             colour="black") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  scale_y_continuous(limits = c(y1_min.left, 
+                                y1_max.left), 
+                     sec.axis = sec_axis(~scale_fun(., 
+                                                    scale_var.left, 
+                                                    shift_var.left), 
+                                         name="Mortality (%)")) +
+  labs(x = "Year", 
+       y = "Oxytetracycline use (%)",
+       color = "") + 
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "#2980B9"),
+        axis.title.y.right = element_text(size = 10, 
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8, 
+                                   angle=45, 
+                                   hjust=1), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank()) 
+fig3.a
+
+```
+
+## Figure 3B
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("fum_spring_fall|^winterloss", 
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC",
+                                   "AB",
+                                   "SK",
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  filter(grepl("TOTAL", 
+               province)) %>% 
+  arrange(year) %>% 
+  arrange(province)
+
+#----------------------------------------------------
+#Set functions for scaling secondary axis
+#----------------------------------------------------
+scale_fun <- function(x, scale, shift){
+  return ((x)*scale - shift)
+}
+scale_fun_inv <- function(x, scale, shift){
+  return ((x + shift)/scale)
+}
+#---------------------------------------------------- #Specify min/max of left (y1) and right (y2) y-axes
+#Determined below values via inspection of min()/max() variables of interest
+y1_min.mid  <- 5
+y1_max.mid  <- 55
+
+y2_min <- 0
+y2_max <- 50
+
+#----------------------------------------------------
+scale_var.mid = (y2_max - y2_min)/(y1_max.mid - y1_min.mid)
+shift_var.mid = y1_min.mid - y2_min
+#----------------------------------------------------
+
+
+#Plot
+capa.melt.g.mid <- cbind((capa.melt.g %>% 
+                            filter(grepl("^winterloss", 
+                                         variable)) %>% 
+                            dplyr::select(year, 
+                                          province, 
+                                          value) %>% 
+                            dplyr::rename(winterloss = "value")),
+                         (capa.melt.g %>% 
+                            filter(!grepl("^winterloss", 
+                                          variable)) %>%
+                            dplyr::select(value) %>%
+                            dplyr::rename(usage = "value"))) %>%
+  as.data.frame()
+
+fig3.b <- ggplot(capa.melt.g.mid,  
+                 aes(x=year, 
+                     y=usage)) + 
+  geom_smooth(method='loess',
+              span=1.5,
+              colour="green4", 
+              fill="#B2E8B3", 
+              alpha=0.5, 
+              size=0.7) +
+  geom_smooth(aes(y = scale_fun_inv(winterloss,
+                                    scale_var.mid, 
+                                    shift_var.mid)),
+              method='loess', 
+              span=1.5, 
+              colour="black", 
+              fill="grey50",
+              alpha=0.2, 
+              size=0.7) +
+  geom_point(colour="green4") +
+  geom_point(aes(y = scale_fun_inv(winterloss,
+                                   scale_var.mid,
+                                   shift_var.mid)), 
+             colour="black") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  scale_y_continuous(limits = c(y1_min.mid, 
+                                y1_max.mid), 
+                     sec.axis = sec_axis(~scale_fun(., 
+                                                    scale_var.mid, 
+                                                    shift_var.mid),
+                                         name="Mortality (%)")) +
+  labs(x = "Year",
+       y = "Fumagillin use (%)",
+       color = "green4") + 
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "green4"),
+        axis.title.y.right = element_text(size = 10,
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8,
+                                   angle=45,
+                                   hjust=1), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank()) 
+
+fig3.b
+
+```
+
+
+## Figure 3C
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>%
+  filter(grepl("var_spring_fall|^winterloss", 
+               variable)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province,
+                          levels=c("TOTAL",
+                                   "BC",
+                                   "AB", 
+                                   "SK",
+                                   "MB", 
+                                   "ON",
+                                   "QC",
+                                   "NB",
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  filter(grepl("TOTAL", 
+               province)) %>% 
+  arrange(year) %>% 
+  arrange(province)
+
+#----------------------------------------------------
+#Set functions for scaling secondary axis
+#----------------------------------------------------
+scale_fun <- function(x, scale, shift){
+  return ((x)*scale - shift)
+}
+scale_fun_inv <- function(x, scale, shift){
+  return ((x + shift)/scale)
+}
+#---------------------------------------------------- #Specify min/max of left (y1) and right (y2) y-axes
+#Determined below values via inspection of min()/max() variables of interest
+y1_min.right  <- 50   #Miticide min
+y1_max.right  <- 100  #Miticide max
+
+y2_min <- 0  #Winterloss min
+y2_max <- 50 #Winterloss max
+
+#----------------------------------------------------
+scale_var.right = (y2_max - y2_min)/(y1_max.right - y1_min.right)
+shift_var.right = y1_min.right - y2_min
+#----------------------------------------------------
+
+
+#Plot
+capa.melt.g.right <- cbind((capa.melt.g %>%
+                              filter(grepl("^winterloss", 
+                                           variable)) %>%
+                              dplyr::select(year, 
+                                            province, 
+                                            value) %>%
+                              dplyr::rename(winterloss = "value")),
+                           (capa.melt.g %>% 
+                              filter(!grepl("^winterloss", 
+                                            variable)) %>%
+                              dplyr::select(value) %>% 
+                              dplyr::rename(usage = "value"))) %>% 
+  as.data.frame()
+
+fig3.c <- ggplot(capa.melt.g.right,  
+                 aes(x=year,
+                     y=usage)) + 
+  geom_smooth(method='loess', 
+              span=1.5, 
+              colour="#AC8300",
+              fill="#FFE89F",
+              alpha=0.5, 
+              size=0.7) +
+  geom_smooth(aes(y = scale_fun_inv(winterloss, 
+                                    scale_var.right, 
+                                    shift_var.right)), 
+              method='loess', 
+              span=1.5,
+              colour="black", 
+              fill="grey50", 
+              alpha=0.2,
+              size=0.7) +
+  geom_point(colour="#AC8300") +
+  geom_point(aes(y = scale_fun_inv(winterloss,
+                                   scale_var.right, 
+                                   shift_var.right)),
+             colour="black") +
+  scale_x_continuous(breaks = seq(2015, 2023, 1)) +
+  scale_y_continuous(limits = c(y1_min.right,
+                                y1_max.right),
+                     sec.axis = sec_axis(~scale_fun(., 
+                                                    scale_var.right, 
+                                                    shift_var.right), 
+                                         name="Mortality (%)")) +
+  labs(x = "Year", 
+       y = "Miticide use (%)", 
+       color = "") + 
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "#AC8300"),
+        axis.title.y.right = element_text(size = 10,
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8, 
+                                   angle=45,
+                                   hjust=1), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank()) 
+
+fig3.c
+
+
+```
+
+
+## Figure 3D
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("oxytet_spring_fall", 
+               variable)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>%
+  mutate(province= factor(province, 
+                          levels=c("TOTAL",
+                                   "BC", 
+                                   "AB", 
+                                   "SK",
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province), 
+                            "#2980B9", 
+                            "grey50")) %>% 
+  arrange(year) %>%
+  arrange(province) %>%
+  group_by(year) %>%
+  mutate(value3 = mean(value, 
+                       na.rm=TRUE)) %>%
+  ungroup() %>%
+  filter(grepl("TOTAL", 
+               province))
+
+fig3.d <- ggplot(capa.melt.g, 
+                 aes(x=winterloss, 
+                     y=value3)) +
+  smplot2::sm_statCorr(color = '#2980B9',
+                       corr_method = 'pearson',
+                       linetype="dashed", 
+                       text_size=3, 
+                       label_x = 20, 
+                       label_y = 15,
+                       linewidth=0.7) +
+  xlab("Mortality (%)") +
+  ylab("Oxytetracycline use (%)") + 
+  theme(axis.title.y.left = element_text(colour="#2980B9")) +
+  ylim(c(0,60)) +
+  geom_point() +
+  directlabels::geom_dl(aes(label=year), 
+                        method=list("bumpup", 
+                                    cex=0.5,
+                                    rot =0, 
+                                    hjust = -.5), 
+                        position=ggstance::position_dodgev(height=7)) +
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "#2980B9"),
+        axis.title.y.right = element_text(size = 10, 
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+
+fig3.d
+```
+
+## Figure 3E
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+capa.melt.g <- capa.melt.correlations %>% 
+  filter(grepl("fum_spring_fall",
+               variable)) %>% 
+  mutate_at(vars(value), 
+            as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province, 
+                          levels=c("TOTAL", 
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  mutate(line_width = ifelse(grepl("TOTAL", 
+                                   province), 
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL", 
+                                  province), 
+                            "green4", 
+                            "grey50")) %>% 
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(grepl("TOTAL", 
+               province))
+
+fig3.e <- ggplot(capa.melt.g, 
+                 aes(x=winterloss, 
+                     y=value)) +
+  smplot2::sm_statCorr(color = '#0f993d',
+                       corr_method = 'pearson', 
+                       linetype="dashed", 
+                       text_size=3, 
+                       label_x = 20, 
+                       label_y = 15,
+                       linewidth=0.7) +
+  xlab("Mortality (%)") +
+  ylab("Fumagillin use (%)") + 
+  theme(axis.title.y.left = element_text(colour="#0f993d")) +
+  ylim(c(5,55)) +
+  geom_point() +
+  directlabels::geom_dl(aes(label=year),
+                        method=list("bumpup",
+                                    cex=0.5, 
+                                    rot =0, 
+                                    hjust = -.5), 
+                        position=ggstance::position_dodgev(height=7)) +
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "#0f993d"),
+        axis.title.y.right = element_text(size = 10,
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+print(fig3.e)
+
+```
+
+
+## Figure 3F
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+
+capa.melt.g <- capa.melt.correlations %>%
+  filter(grepl("var_spring_fall",
+               variable)) %>% mutate_at(vars(value), 
+                                        as.numeric) %>% 
+  droplevels() %>% 
+  mutate(province= factor(province,
+                          levels=c("TOTAL",
+                                   "BC", 
+                                   "AB", 
+                                   "SK", 
+                                   "MB", 
+                                   "ON", 
+                                   "QC", 
+                                   "NB", 
+                                   "PE", 
+                                   "NS", 
+                                   "NL"))) %>% 
+  mutate(line_width = ifelse(grepl("TOTAL",
+                                   province),
+                             2, 0.1)) %>% 
+  mutate(line_cols = ifelse(grepl("TOTAL",
+                                  province), 
+                            "#AC8300",
+                            "grey50")) %>% 
+  arrange(year) %>% 
+  arrange(province) %>% 
+  filter(grepl("TOTAL", 
+               province))
+
+#plot
+fig3.f <- ggplot(capa.melt.g, 
+                 aes(x=winterloss, 
+                     y=value)) +
+  smplot2::sm_statCorr(color = '#AC8300',
+                       corr_method = 'pearson',
+                       linetype="dashed", 
+                       text_size=3, 
+                       label_x = 20,
+                       label_y = 65,
+                       linewidth=0.7) +
+  xlab("Mortality (%)") +
+  ylab("Miticide use (%)") + 
+  theme(axis.title.y.left = element_text(colour="#AC8300")) +
+  ylim(c(60,90)) +
+  geom_point() +
+  directlabels::geom_dl(aes(label=year), 
+                        method=list("bumpup",
+                                    cex=0.5, 
+                                    rot =0, 
+                                    hjust = -.5)) +
+  theme(axis.title.y.left = element_text(size = 10, 
+                                         colour = "#AC8300"),
+        axis.title.y.right = element_text(size = 10, 
+                                          colour = "black"),
+        axis.title.x = element_text(size=10),
+        axis.text.x = element_text(size = 8), 
+        axis.text.y = element_text(size=8),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+fig3.f
+
+```
+
+## Table 1
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=12, fig.height=10, eval=TRUE}
+
+capa.df.filt <- capa.df %>%
+  mutate_at(vars(respondent_colonies_percent,
+                 bac_spring_oxytet,
+                 bac_fall_oxytet, 
+                 nos_spring_fum, 
+                 nos_fall_fum, 
+                 var_spring_other,
+                 var_fall_other), 
+            as.numeric) %>% 
+  mutate(respondent_colonies_percent = ifelse(
+    respondent_colonies_percent > 100, 
+    100, respondent_colonies_percent)) %>%
+  mutate(oxytet_spring_fall = (bac_spring_combined + 
+                                 bac_fall_combined)/2) %>%
+  mutate(fum_spring_fall = (nos_spring_combined + 
+                              nos_fall_combined)/2) %>%
+  mutate(var_spring_fall = (var_spring_other + 
+                              var_fall_other)/2) %>%
+  mutate(winterloss= winterloss_percent)
+
+capa.melt <- melt(capa.df.filt , 
+                  id.var=c("year", 
+                           "province",
+                           "winterloss",
+                           "raw_total",
+                           "respondent_colonies")) %>% 
+  mutate_at(vars("raw_total", 
+                 "respondent_colonies"), 
+            as.numeric)
+
+capa.melt.correlations <- melt(capa.df.filt,
+                               id.var=c("year", 
+                                        "province", 
+                                        "winterloss_percent", 
+                                        "raw_total", 
+                                        "respondent_colonies"))  %>% 
+  filter(!is.na(winterloss_percent)) %>% 
+  mutate_at(vars(winterloss_percent, 
+                 "raw_total", 
+                 "respondent_colonies"),
+            as.numeric) %>%
+  dplyr::rename("winterloss" = winterloss_percent)
+
+#----------Air pollution and climate factors adjusted to 'bee year' format
+
+air.vars <- cbind(readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
+                    filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL", 
+                                 Province)) %>% 
+                    mutate(year_prov = paste(Year_beeyear_lag,
+                                             "_", 
+                                             Province, 
+                                             sep="")) %>% 
+                    dcast(year_prov ~ Pollutant, 
+                          value.var = "mean_value") %>% 
+                    rowwise() %>% 
+                    mutate(NOX_custom = NO+NO2) %>%
+                    ungroup(),
+                  readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
+                    filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL",
+                                 Province)) %>%
+                    mutate(year_prov = paste(Year_beeyear_lag,
+                                             "_", 
+                                             Province,
+                                             sep="")) %>%
+                    dcast(year_prov ~ Pollutant,
+                          value.var = "mean_winter") %>%
+                    rowwise() %>% 
+                    mutate(NOX_custom = NO+NO2) %>%
+                    ungroup() %>% 
+                    `colnames<-`(c("year_prov",
+                                   paste("winter",
+                                         colnames(.)[
+                                           2:length(colnames(.))
+                                           ], 
+                                         sep="_"))) %>% 
+                    select(-year_prov),
+                  readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
+                    filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL", 
+                                 Province)) %>% 
+                    mutate(year_prov = paste(Year_beeyear_lag,
+                                             "_", 
+                                             Province, sep="")) %>% 
+                    dcast(year_prov ~ Pollutant, 
+                          value.var = "mean_spring") %>%
+                    rowwise() %>% 
+                    mutate(NOX_custom = NO+NO2) %>%
+                    ungroup() %>% 
+                    `colnames<-`(c("year_prov", 
+                                   paste("spring",
+                                         colnames(.)[
+                                           2:length(colnames(.))
+                                           ], 
+                                         sep="_"))) %>%
+                    select(-year_prov),
+                  readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
+                    filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL", 
+                                 Province)) %>% 
+                    mutate(year_prov = paste(Year_beeyear_lag,
+                                             "_",
+                                             Province, 
+                                             sep="")) %>%
+                    dcast(year_prov ~ Pollutant,
+                          value.var = "mean_summer") %>% 
+                    rowwise() %>% 
+                    mutate(NOX_custom = NO+NO2) %>% 
+                    ungroup() %>% 
+                    `colnames<-`(c("year_prov",
+                                   paste("summer",
+                                         colnames(.)[
+                                           2:length(colnames(.))
+                                           ],
+                                         sep="_"))) %>% 
+                    select(-year_prov),
+                  readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
+                    filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL", 
+                                 Province)) %>% 
+                    mutate(year_prov = paste(Year_beeyear_lag,
+                                             "_", 
+                                             Province, 
+                                             sep="")) %>% 
+                    dcast(year_prov ~ Pollutant, 
+                          value.var = "mean_fall") %>% 
+                    rowwise() %>% 
+                    mutate(NOX_custom = NO+NO2) %>% 
+                    ungroup() %>% 
+                    `colnames<-`(c("year_prov",
+                                   paste("fall", 
+                                         colnames(.)[
+                                           2:length(colnames(.))
+                                           ], sep="_"))) %>% 
+                    select(-year_prov))
+
+climate.vars <- readr::read_tsv("tables/climate_data_adj.tsv") %>%
+  filter(date_year_beeyear_lag != "2014") %>% 
+  filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL",
+               Prov_or_Ter)) %>% 
+  mutate(year_prov = paste(date_year_beeyear_lag, 
+                           "_", 
+                           Prov_or_Ter, sep=""))
+
+#---------------------------------------
+
+capa.df.filt.mer <- merge(capa.df.filt %>% 
+                            mutate(year_prov = paste(year,
+                                                     "_", 
+                                                     province,
+                                                     sep="")),
+                          climate.vars, 
+                          by="year_prov",
+                          all=TRUE) %>% 
+  merge(., air.vars, 
+        by="year_prov",
+        all=TRUE)
+
+capa.melt.correlations.mer <- melt(capa.df.filt.mer, 
+                                   id.var=c("year", 
+                                            "province", 
+                                            "winterloss", 
+                                            "raw_total",
+                                            "respondent_colonies",
+                                            "mean_Tm_spring", 
+                                            "mean_Tm_summer", 
+                                            "mean_Tm_fall", 
+                                            "mean_Tm_winter",
+                                            "mean_P_spring", 
+                                            "mean_P_summer",
+                                            "mean_P_fall", 
+                                            "mean_P_winter",
+                                            "mean_S_spring", 
+                                            "mean_S_summer", 
+                                            "mean_S_fall", 
+                                            "mean_S_winter",
+                                            "mean_Tm", 
+                                            "mean_Tx", 
+                                            "mean_Tn", 
+                                            "mean_S", 
+                                            "mean_P", 
+                                            "mean_S_G",
+                                            "mean_Pd", 
+                                            "mean_HDD",
+                                            "mean_CDD",
+                                            "CO", 
+                                            "NO", 
+                                            "NO2", 
+                                            "NOX", 
+                                            "O3", 
+                                            "PM10", 
+                                            "PM2.5", 
+                                            "SO2", 
+                                            "NOX_custom",
+                                            "winter_CO", 
+                                            "winter_NO",
+                                            "winter_NO2",
+                                            "winter_NOX",
+                                            "winter_O3", 
+                                            "winter_PM10",
+                                            "winter_PM2.5",
+                                            "winter_SO2", 
+                                            "winter_NOX_custom",
+                                            "spring_CO",
+                                            "spring_NO", 
+                                            "spring_NO2", 
+                                            "spring_NOX",
+                                            "spring_O3", 
+                                            "spring_PM10",
+                                            "spring_PM2.5",
+                                            "spring_SO2", 
+                                            "spring_NOX_custom",
+                                            "summer_CO", 
+                                            "summer_NO", 
+                                            "summer_NO2",
+                                            "summer_NOX",
+                                            "summer_O3", 
+                                            "summer_PM10", 
+                                            "summer_PM2.5",
+                                            "summer_SO2",  
+                                            "summer_NOX_custom",
+                                            "fall_CO", 
+                                            "fall_NO", 
+                                            "fall_NO2",
+                                            "fall_NOX",
+                                            "fall_O3", 
+                                            "fall_PM10", 
+                                            "fall_PM2.5", 
+                                            "fall_SO2",  
+                                            "fall_NOX_custom")) %>% 
+  filter(!is.na(winterloss)) %>% 
+  mutate_at(vars("winterloss", 
+                 "raw_total", 
+                 "respondent_colonies", 
+                 "mean_Tm_spring",
+                 "mean_Tm_summer", 
+                 "mean_Tm_fall", 
+                 "mean_Tm_winter", 
+                 "mean_P_spring", 
+                 "mean_P_summer", 
+                 "mean_P_fall", 
+                 "mean_P_winter",
+                 "mean_S_spring", 
+                 "mean_S_summer", 
+                 "mean_S_fall", 
+                 "mean_S_winter",
+                 "mean_Tm", 
+                 "mean_S", 
+                 "CO", 
+                 "NO",
+                 "NO2", 
+                 "NOX",
+                 "O3", 
+                 "PM10",
+                 "PM2.5",
+                 "SO2", 
+                 "NOX_custom",
+                 "mean_HDD", 
+                 "mean_CDD",
+                 "winter_CO",
+                 "winter_NO", 
+                 "winter_NO2",
+                 "winter_NOX",
+                 "winter_O3", 
+                 "winter_PM10", 
+                 "winter_PM2.5",
+                 "winter_SO2",  
+                 "winter_NOX_custom",
+                 "spring_CO", 
+                 "spring_NO",
+                 "spring_NO2", 
+                 "spring_NOX",
+                 "spring_O3",
+                 "spring_PM10", 
+                 "spring_PM2.5", 
+                 "spring_SO2", 
+                 "spring_NOX_custom",
+                 "summer_CO", 
+                 "summer_NO", 
+                 "summer_NO2",
+                 "summer_NOX", 
+                 "summer_O3",
+                 "summer_PM10", 
+                 "summer_PM2.5",
+                 "summer_SO2", 
+                 "summer_NOX_custom",
+                 "fall_CO",
+                 "fall_NO", 
+                 "fall_NO2", 
+                 "fall_NOX", 
+                 "fall_O3", 
+                 "fall_PM10",
+                 "fall_PM2.5",
+                 "fall_SO2",  
+                 "fall_NOX_custom"),
+            as.numeric)
+
+
+#::::::::::::::::::::::::::::
+# Table 1
+#::::::::::::::::::::::::::::
+
+capa.melt.g <- capa.melt.correlations.mer %>% 
+  filter(grepl("oxytet_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value, winterloss), 
+            as.numeric) %>% 
+  filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL", 
+               province)) %>% droplevels() %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  ungroup() 
+
+capa.melt.g2 <- capa.melt.correlations.mer %>% 
+  filter(grepl("fum_spring_fall",
+               variable)) %>% 
+  mutate_at(vars(value, winterloss),
+            as.numeric) %>% 
+  filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL",
+               province)) %>%  
+  droplevels() %>% 
+  arrange(year) %>% 
+  arrange(province) %>%
+  ungroup() 
+
+capa.melt.g3 <- capa.melt.correlations.mer %>%
+  filter(grepl("var_spring_fall", 
+               variable)) %>% 
+  mutate_at(vars(value, 
+                 winterloss), 
+            as.numeric) %>% 
+  filter(grepl("BC|AB|SK|MB|ON|QC|NB|PE|NS|NL",
+               province)) %>%  
+  droplevels() %>% 
+  arrange(year) %>% 
+  arrange(province) %>% 
+  ungroup() 
+
+capa.melt.g$value2 <- capa.melt.g2$value
+capa.melt.g$value3 <- capa.melt.g3$value 
+
+capa.melt.g <- capa.melt.g %>% 
+  rowwise() %>% 
+  mutate(value4 = mean(c(value, 
+                         value2),
+                       na.rm=TRUE))  %>% 
+  ungroup() %>% 
+  mutate(year_prov = paste(year,
+                           province,
+                           sep="_")) %>%
+  mutate_at(vars(province), 
+            as.factor) %>% 
+  filter(!is.na(winterloss)) %>%
+  filter(!grepl("QC|NL", 
+                province)) %>% 
+  mutate_at(vars(value4,
+                 value3, 
+                 mean_Tm, 
+                 mean_P,
+                 mean_S,  
+                 mean_Tm_winter,
+                 mean_Tm_spring,
+                 mean_Tm_summer,
+                 mean_Tm_fall, 
+                 mean_P_winter,
+                 mean_P_spring,
+                 mean_P_summer,
+                 mean_P_fall, 
+                 mean_S_winter,
+                 mean_S_spring,
+                 mean_S_summer,
+                 mean_S_fall,
+                 NO, 
+                 NO2, 
+                 SO2, 
+                 PM2.5, 
+                 CO, 
+                 O3), funs(scale(., 
+                                 center=TRUE,
+                                 scale=TRUE)[,1])) %>%
+  mutate_at(vars(value3), 
+            funs(randomForest::na.roughfix(.))) %>% 
+  dplyr::rename(Antibiotics = value4, 
+                Miticides=value3, 
+                Tm = mean_Tm,
+                Tm_wi = mean_Tm_winter,
+                Tm_sp = mean_Tm_spring,
+                Tm_su = mean_Tm_summer,
+                Tm_fa = mean_Tm_fall,
+                P=mean_P, 
+                P_wi = mean_P_winter,
+                P_sp = mean_P_spring,
+                P_su = mean_P_summer,
+                P_fa = mean_P_fall,
+                S = mean_S,
+                S_wi = mean_S_winter,
+                S_sp = mean_S_spring,
+                S_su = mean_S_summer,
+                S_fa = mean_S_fall)
+
+
+#Plot correlogram to see individual correlations between predictors
+#=================================================================================================================
+GGally::ggpairs(capa.melt.g %>% 
+                  filter(!is.na(Miticides)) %>% 
+                  filter(!is.na(CO)) %>% 
+                  filter(!is.na(O3)) %>% 
+                  dplyr::select(winterloss, 
+                                Antibiotics, 
+                                Miticides, 
+                                Tm, 
+                                P, 
+                                S,
+                                NO,
+                                NO2,
+                                CO, 
+                                O3, 
+                                SO2,
+                                PM2.5))
+
+#=================================================================================================================
+
+model_1 <- lm(winterloss ~ Antibiotics,
+              data=capa.melt.g,
+              na.action=na.omit)
+
+model_2 <- lme4::lmer(winterloss ~ Antibiotics +
+                        (1 | province),
+                      data=capa.melt.g,
+                      REML=FALSE, na.action=na.omit)
+
+model_3 <- lme4::lmer(winterloss ~ Antibiotics +
+                        Miticides +  
+                        Tm + 
+                        P + 
+                        S + 
+                        (1 | province),
+                      data=capa.melt.g %>% 
+                        filter(!is.na(Miticides)) %>%
+                        filter(!is.na(CO)) %>%
+                        filter(!is.na(O3)),
+                      REML=FALSE, na.action=na.omit)
+
+model_4 <- lme4::lmer(winterloss ~ Antibiotics +
+                        Miticides + 
+                        NO + 
+                        NO2 +
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>% 
+                        filter(!is.na(Miticides)) %>%
+                        filter(!is.na(CO)) %>%
+                        filter(!is.na(O3)),
+                      REML=FALSE, na.action=na.omit)
+
+model_5 <- lme4::lmer(winterloss ~ Antibiotics +
+                        Miticides + 
+                        Tm + 
+                        P + 
+                        S +
+                        NO + 
+                        NO2 + 
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>%
+                        filter(!is.na(Miticides)) %>% 
+                        filter(!is.na(CO)) %>% 
+                        filter(!is.na(O3)),
+                      REML=FALSE, na.action=na.omit)
+
+model_6 <- lme4::lmer(winterloss ~ Antibiotics +
+                        Miticides + 
+                        Tm_wi +
+                        Tm_sp + 
+                        Tm_su + 
+                        Tm_fa + 
+                        P + 
+                        S +
+                        NO + 
+                        NO2 + 
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>%
+                        filter(!is.na(Miticides)) %>% 
+                        filter(!is.na(CO)) %>% 
+                        filter(!is.na(O3)),
+                      REML=FALSE, na.action=na.omit)
+
+model_7 <- lme4::lmer(winterloss ~ Antibiotics + 
+                        Miticides +  
+                        Tm + 
+                        S + 
+                        P_wi + 
+                        P_sp + 
+                        P_su + 
+                        P_fa +
+                        NO + 
+                        NO2 +
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>%
+                        filter(!is.na(Miticides)) %>%
+                        filter(!is.na(CO)) %>% 
+                        filter(!is.na(O3)),
+                      REML=FALSE, na.action=na.omit)
+
+model_8 <- lme4::lmer(winterloss ~ 
+                        Antibiotics + 
+                        Miticides +  
+                        Tm +
+                        P + 
+                        S_wi + 
+                        S_sp + 
+                        S_su + 
+                        S_fa +
+                        NO + 
+                        NO2 +
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>% 
+                        filter(!is.na(Miticides)) %>% 
+                        filter(!is.na(CO)) %>% 
+                        filter(!is.na(O3)),
+                      REML=FALSE, 
+                      na.action=na.omit)
+
+model_9 <- lme4::lmer(winterloss ~ 
+                        Antibiotics + 
+                        Miticides +
+                        Tm_wi + 
+                        Tm_sp + 
+                        Tm_su + 
+                        Tm_fa + 
+                        P_wi + 
+                        P_sp + 
+                        P_su +
+                        P_fa +
+                        S_wi + 
+                        S_sp + 
+                        S_su + 
+                        S_fa +
+                        NO + 
+                        NO2 + 
+                        CO + 
+                        O3 + 
+                        SO2 + 
+                        PM2.5 + 
+                        (1 | province),
+                      data=capa.melt.g %>%
+                        filter(!is.na(Miticides)) %>% 
+                        filter(!is.na(CO)) %>% 
+                        filter(!is.na(O3)),
+                      REML=FALSE, 
+                      na.action=na.omit)
+
+sjPlot::tab_model(model_1, 
+                  model_2, 
+                  model_3, 
+                  model_4, 
+                  model_5, 
+                  model_6, 
+                  model_7, 
+                  model_8, 
+                  model_9, 
+                  show.ci=FALSE, 
+                  digits.p = 4,
+                  show.aic = TRUE, 
+                  show.aicc = TRUE,
+                  show.loglik = TRUE, 
+                  show.stat = TRUE, 
+                  show.re.var = TRUE, 
+                  show.icc=TRUE,
+                  CSS = list(sjPlot::css_theme("regression"), 
+                             sjPlot::css_theme("cells"), 
+                             css.table = '+font-size: 8;'), 
+                  dv.labels = c("Model 1", 
+                                "Model 2", 
+                                "Model 3", 
+                                "Model 4", 
+                                "Model 5",
+                                "Model 6", 
+                                "Model 7",
+                                "Model 8", 
+                                "Model 9"))
+
+
+
+```
+lm()
+
+## Figure 3G
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+#Set seed for reproducible results from partR2 package
+set.seed(123)
+
+#Setup cores for multithreading 
+parallel::detectCores()
+future::plan(multisession, workers = 12)
+
+#Run partR2 command get statistics for Model 6 
+R2_mod <- partR2::partR2(model_6, 
+                         partvars = c("Antibiotics", 
+                                      "Miticides",
+                                      "Tm_wi",
+                                      "Tm_sp", 
+                                      "Tm_su", 
+                                      "Tm_fa", 
+                                      "P",
+                                      "S", 
+                                      "NO2",
+                                      "NO", 
+                                      "CO",
+                                      "O3", 
+                                      "SO2", 
+                                      "PM2.5"),
+                         R2_type = "conditional",
+                         nboot = 100, 
+                         max_level=1, 
+                         parallel = TRUE) 
+
+summary(R2_mod)
+
+print(R2_mod$R2 %>% arrange(desc(estimate)) %>% 
+        filter(grepl("Antibiotics|", 
+                     term)), 
+      n=100)
+
+print(R2_mod$SC %>% arrange(desc(estimate)) %>% 
+        filter(grepl("Antibiotics|", 
+                     term)),
+      n=100)
+
+print(R2_mod$BW %>% arrange(desc(estimate)) %>% 
+        filter(grepl("Antibiotics|", 
+                     term)),
+      n=100)
+
+partR2.panel <- cowplot::plot_grid(partR2::forestplot(R2_mod, 
+                                                      type = "R2", 
+                                                      text_size = 10),
+                                   partR2::forestplot(R2_mod, 
+                                                      type = "IR2", 
+                                                      text_size = 10),
+                                   partR2::forestplot(R2_mod, 
+                                                      type = "SC",
+                                                      text_size = 10),
+                                   partR2::forestplot(R2_mod, 
+                                                      type = "BW", 
+                                                      text_size = 10)
+                                   )
+
+print(partR2.panel)
+
+fig3.g <- partR2::forestplot(R2_mod,
+                             type = "SC", 
+                             text_size = 10)
+
+print(fig3.g)
+
+```
+
+
+## Figure 3H
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
+
+#proportion of variance in the dependent variable that can be explained by the independent variable.
+R2_mod.df <- R2_mod$R2 %>% 
+  mutate(relative_estimate = estimate) %>%
+  filter(term!="Full") %>%
+  arrange((estimate)) %>% 
+  mutate(term = case_when(
+    term == "Temperature_winter" ~ "Tm_wi",
+    term == "Temperature_spring" ~ "Tm_sp",
+    term == "Temperature_summer" ~ "Tm_su",
+    term == "Temperature_fall" ~ "Tm_fa",
+    TRUE ~ term)) %>%
+  mutate(term = factor(term, 
+                       levels=rev(term)))
+  
+
+fig3.h <- ggplot(R2_mod.df, 
+                 aes(x=relative_estimate,
+                     y=term)) + 
+  coord_flip() + 
+  xlab(bquote('Semi-partial R'^'2')) + 
+  geom_bar(stat="identity", 
+           color=NA, 
+           width=0.9) +
+  theme(axis.text.x = element_text(size = 8,
+                                   angle=45,
+                                   hjust=1),
+        panel.background = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=10),
+        axis.text.y = element_text(size=8)) 
+
+print(fig3.h)
+
+```
+
+## Figure 3 (Full panel)
+```{r, echo=TRUE, warning=FALSE, fig.width=9.1, fig.height=11.7, eval=TRUE}
+
+
+fig3.top <- cowplot::plot_grid(fig3.a,
+                               fig3.b,
+                               fig3.c,
+                               ncol=3, 
+                               labels = c('A', 
+                                          'B', 
+                                          'C'))
+
+fig3.mid <- cowplot::plot_grid(fig3.d,
+                               NULL,
+                               fig3.e,
+                               NULL,
+                               fig3.f,
+                               NULL,
+                               ncol=6, 
+                               labels = c('D',
+                                          '', 
+                                          'E',
+                                          '',
+                                          'F',
+                                          ''), 
+                               rel_widths=c(0.3,
+                                            0.033,
+                                            0.3,
+                                            0.033,
+                                            0.3, 
+                                            0.033))
+
+fig3.bottom <- cowplot::plot_grid(
+  NULL, 
+  fig3.g, 
+  fig3.h + 
+    ggtitle("Variance uniquely explained by each predictor") +
+    theme(plot.title = element_text(size=7,
+                                    vjust=-1, 
+                                    hjust=0.5)),
+  NULL,
+  labels = c('',
+             'G', 
+             'H', 
+             ''),
+  ncol=4,
+  rel_widths=c(0.15,
+               0.3,
+               0.4, 
+               0.05))
+
+cowplot::plot_grid(fig3.top, 
+                   fig3.mid,
+                   fig3.bottom, 
+                   ncol=1, 
+                   rel_heights=c(0.33,
+                                 0.33,
+                                 0.33))
+
+
+```
+

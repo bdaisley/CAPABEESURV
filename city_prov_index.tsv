@@ -1,0 +1,235 @@
+City	Province	Annotation
+St. John's	NL	Auto
+Mount Pearl	NL	Auto
+Grand Falls - Windsor	NL	Auto
+Corner Brook	NL	Auto
+Burin	NL	Auto
+Halifax	NS	Auto
+Sydney	NS	Auto
+Saint John	NB	Auto
+Moncton	NB	Auto
+Montréal	QC	Auto
+Laval	QC	Auto
+Gatineau	QC	Auto
+Quebec	QC	Auto
+Saint-Anicet	QC	Auto
+Windsor	ON	Auto
+Toronto	ON	Auto
+Hamilton	ON	Auto
+Regina	SK	Auto
+Saskatoon	SK	Auto
+Edmonton	AB	Auto
+St. Albert	AB	Auto
+Calgary	AB	Auto
+Airdrie	AB	Auto
+Red Deer	AB	Auto
+Medicine Hat	AB	Auto
+Lethbridge	AB	Auto
+Fort Saskatchewan	AB	Auto
+Fort Mcmurray	AB	Auto
+Fort Mackay	AB	Auto
+Conklin	AB	Auto
+Steeper	AB	Auto
+Fort Chipewyan	AB	Auto
+Grande Prairie	AB	Auto
+Metro Van - Port Moody	BC	Auto
+Metro Van - Vancouver	BC	Auto
+Metro Van - Burnaby	BC	Auto
+Metro Van - Surrey	BC	Auto
+Metro Van - Richmond	BC	Auto
+Metro Van - North Vancouver	BC	Auto
+Metro Van - Delta	BC	Auto
+Metro Van - Abbotsford	BC	Auto
+Metro Van-Chilliwack	BC	Auto
+Metro Van - Maple Ridge	BC	Auto
+Yellowknife	NT	Auto
+Fort Smith	NT	Auto
+Labrador City	NL	Auto
+Charlottetown	PE	Auto
+Dartmouth	NS	Auto
+Port Hawkesbury	NS	Auto
+Pictou	NS	Auto
+Edmundston	NB	Auto
+Brossard	QC	Auto
+Rouyn-Noranda	QC	Auto
+Trois Rivières	QC	Auto
+Saguenay	QC	Auto
+Levis	QC	Auto
+Ottawa	ON	Auto
+Sudbury	ON	Auto
+Sault Ste. Marie	ON	Auto
+Sarnia	ON	Auto
+Simcoe	ON	Auto
+Milton	ON	Auto
+Flin Flon	MB	Auto
+Prince Albert	SK	Auto
+Estevan	SK	Auto
+Swift Current	SK	Auto
+Buffalo Narrows	SK	Auto
+Sherwood Park	AB	Auto
+Ardrossan	AB	Auto
+Gibbons	AB	Auto
+Redwater	AB	Auto
+Bruderheim	AB	Auto
+Wapasu	AB	Auto
+Elk Island	AB	Auto
+Tomahawk	AB	Auto
+Beaverlodge	AB	Auto
+Carrot Creek	AB	Auto
+Caroline	AB	Auto
+Lamont	AB	Auto
+Breton	AB	Auto
+Drayton Valley	AB	Auto
+Edson	AB	Auto
+Genesee	AB	Auto
+Hinton	AB	Auto
+Warbug	AB	Auto
+Thorsby	AB	Auto
+Debolt	AB	Auto
+Sunnybrook	AB	Auto
+Cold Lake	AB	Auto
+St Lina	AB	Auto
+Anzac	AB	Auto
+Janvier	AB	Auto
+Metro Van-Pitt Meadows	BC	Auto
+Metro Van-Langley	BC	Auto
+Norman Wells	NT	Auto
+Inuvik	NT	Auto
+Wellington	PE	Auto
+Southampton	PE	Auto
+Aylesford	NS	Auto
+Kentville	NS	Auto
+Fredericton	NB	Auto
+St. Andrews	NB	Auto
+Bathurst	NB	Auto
+Miramichi	NB	Auto
+Longueuil	QC	Auto
+Terrebonne	QC	Auto
+Sherbrooke	QC	Auto
+Drummondville	QC	Auto
+Shawinigan	QC	Auto
+St. Zephirin-De-Courval	QC	Auto
+Charette	QC	Auto
+Saint-Simon	QC	Auto
+Saint-Faustin-Lac-Carre	QC	Auto
+La Peche	QC	Auto
+Auclair	QC	Auto
+La Dore	QC	Auto
+Deschambault	QC	Auto
+Notre-Dame-Du-Rosaire	QC	Auto
+St-Hilaire-De-Dorset	QC	Auto
+Tingwick	QC	Auto
+Ditton	QC	Auto
+Mont Saint-Michel	QC	Auto
+Senneterre	QC	Auto
+Saint-Jean-Sur-Richelieu	QC	Auto
+Granby	QC	Auto
+Kingston	ON	Auto
+Mississauga	ON	Auto
+Brampton	ON	Auto
+Thunder Bay	ON	Auto
+London	ON	Auto
+Peterborough	ON	Auto
+Cornwall	ON	Auto
+St. Catharines	ON	Auto
+Brantford	ON	Auto
+Kitchener	ON	Auto
+Oakville	ON	Auto
+Oshawa	ON	Auto
+Guelph	ON	Auto
+North Bay	ON	Auto
+Tiverton	ON	Auto
+Burlington	ON	Auto
+Dorset	ON	Auto
+Grand Bend	ON	Auto
+Barrie	ON	Auto
+Newmarket	ON	Auto
+Parry Sound	ON	Auto
+Port Stanley	ON	Auto
+Belleville	ON	Auto
+Chatham	ON	Auto
+Winnipeg	MB	Auto
+Brandon	MB	Auto
+Metro Van - New Westminster	BC	Auto
+Metro Van - West Vancouver	BC	Auto
+Agassiz	BC	Auto
+Metro Van-Hope	BC	Auto
+Mission	BC	Auto
+Whitehorse	YU	Auto
+Happy Valley - Goose Bay	NL	Auto
+Port Aux Choix	NL	Auto
+Kejimkujik	NS	Auto
+Chapais	QC	Auto
+Frelighsburg	QC	Auto
+Exp. Lakes Area	ON	Auto
+Algoma	ON	Auto
+Egbert	ON	Auto
+Pickle Lake	ON	Auto
+Moonbeam	ON	Auto
+Pinehouse Lake	SK	Auto
+Flat Valley	SK	Auto
+Joussard	AB	Auto
+Metro Van - Coquitlam	BC	Auto
+Saturna	BC	Auto
+Alert	NT	Auto
+Snare Rapids	NT	Auto
+Wood Buffalo National Park	NT	Auto
+Saint-François	QC	Manual
+Lac-Edouard	QC	Manual
+Petawawa	ON	Manual
+Thompson	MB	Manual
+Violet Grove	AB	Manual
+Prince George	BC	Manual
+Victoria	BC	Manual
+Kamloops	BC	Manual
+Kelowna	BC	Manual
+Squamish	BC	Manual
+Quesnel	BC	Manual
+Cranbrook	BC	Manual
+Nanaimo	BC	Manual
+Trail	BC	Manual
+Powell River	BC	Manual
+Smithers	BC	Manual
+Terrace	BC	Manual
+Port Alberni	BC	Manual
+Williams Lake	BC	Manual
+Campbell River	BC	Manual
+Golden	BC	Manual
+Castlegar	BC	Manual
+Pine River	ON	Manual
+Kitimat	BC	Manual
+Vernon	BC	Manual
+Grand Forks	BC	Manual
+Taylor	BC	Manual
+Bessborough	SK	Manual
+Farmington	BC	Manual
+Duncan	BC	Manual
+Whistler	BC	Manual
+Houston	BC	Manual
+Burns Lake	BC	Manual
+Langdale	BC	Manual
+Fort St. John	BC	Manual
+Valemount	BC	Manual
+Crofton	BC	Manual
+Vanderhoof	BC	Manual
+Courtenay	BC	Manual
+Iqaluit	NU	Manual
+Norton - Kings County	NB	Manual
+Sutton	QC	Manual
+L'assomption	QC	Manual
+Mingan	QC	Manual
+Ucluelet	BC	Manual
+Fundy Nat. Park	NB	Manual
+Point Lepreau	NB	Manual
+St. Leonard	QC	Manual
+Varennes	QC	Manual
+Stukely-Sud	QC	Manual
+Lemieux	QC	Manual
+Esther	AB	Manual
+Bitumount	AB	Manual
+Creston	BC	Manual
+Nelson	BC	Manual
+Tomslake	BC	Manual
+Telkwa	BC	Manual
+Doig River	BC	Manual
+Port Alice	BC	Manual
