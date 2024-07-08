@@ -1,7 +1,9 @@
 # CAPABEESURV repository
 This repository contains data and scripts used for the analysis of Canadian beekeeper antibiotic usage trends based on CAPA survey data. 
 
-An RMarkdown walkthrough document is provided here: https://bdaisley.github.io/CAPABEESURV/
+Relevant manuscript: Daisley et al. 2024. Antibiotic use, air pollution, and seasonal temperature shifts are strong predictors of honey bee mortality in Canada. In draft.
+
+RMarkdown walkthrough document for data analysis and visualization is provided here: https://bdaisley.github.io/CAPABEESURV/
 
 ## Links to original data sources:
 
