@@ -1,5 +1,4 @@
 .Rproj.user
 *.Rhistory$
-CAPABEESURV_Rmarkdown.Rmd
-CAPABEESURV_Rmarkdown.HTML
-*Supplementary_Data_2.xlsx
+*Rmarkdown*
+tables/Supplementary_Data_2.xlsx
