@@ -2,7 +2,7 @@
 title: CAPA Annual Colony Loss Survey Data Analysis
 subtitle: CAPABEESURV
 author: Brendan Daisley
-date: June 14, 2024
+date: Jan 25, 2025
 output:
   html_document:
     code_folding: show
@@ -72,7 +72,7 @@ div.row>div:not(div+div) {
 </style>
 
   <br>
-  <b>Related article:</b> Daisley et al. (2024).Antibiotic use, air pollution, and seasonal temperature shifts are strong predictors of honey bee mortality in Canada .<i> In draft</i> <br><br>
+  <b>Related article:</b> Daisley et al. (2025).Antibiotic use, air pollution, and seasonal temperature are strong predictors of honey bee mortality in Canada .<i> In draft</i> <br><br>
   
   <b>Related GitHub repository:</b> [https://github.com/bdaisley/CAPABEESURV](https://github.com/bdaisley/CAPABEESURV) <br>
   
@@ -82,6 +82,7 @@ div.row>div:not(div+div) {
   * Figure 2
   * Figure 3
   * Table 1
+  * Supplementary Data 2
 
 
 # 1. Load required packages
@@ -90,6 +91,7 @@ div.row>div:not(div+div) {
 
 library(sf)
 library(tidyr)
+library(MuMIn)
 library(dplyr)
 library(purrr)
 library(readxl)
@@ -103,6 +105,7 @@ library(ggrepel)
 library(ggridges)
 library(pdftools)
 library(reshape2)
+library(reactable)
 library(tabulapdf)
 library(packcircles)
 library(rnaturalearth)
@@ -131,6 +134,9 @@ Run the R scripts below to automatically download CAPA surveys, climate datasets
 
 capa.df <- readxl::read_xlsx("tables/CAPA_survey_data.xlsx", 
                              sheet="01 - CAPA Survey Data")
+
+capa.df <- readxl::read_xlsx("tables/Supplementary_Data_1.xlsx",
+                             sheet="S1 - CAPA Survey Data")
 
 capa.df.filt <- capa.df %>% 
   mutate_at(vars(respondent_colonies_percent,
@@ -551,7 +557,7 @@ print(fig1.b)
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=10, eval=TRUE}
 
 
-fig1.c <- readRDS("figures/fig1c.RDS")
+fig1.c <- readRDS("RDS/fig1c.RDS")
 print(fig1.c)
 
 ```
@@ -771,7 +777,7 @@ capa.melt.correlations <- melt(capa.df.filt,
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("oxytet_spring_fall", 
+  filter(grepl("bac_spring_oxytet|bac_fall_oxytet", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -788,6 +794,19 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="oxytet_spring_fall") %>%
+  {. ->> tmp} %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL|NL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% dplyr::select(-value_weighted1, -value_weighted2) %>%
+  #---Combine totals + all provinces
+  rbind(., subset(tmp, province!="TOTAL")) %>% 
   mutate(line_width = ifelse(grepl("TOTAL",
                                    province), 
                              1.5, 
@@ -795,9 +814,8 @@ capa.melt.g <- capa.melt.correlations %>%
   mutate(line_cols = ifelse(grepl("TOTAL", 
                                   province),
                             "#2980B9",
-                            "grey50")) %>% 
-  arrange(year) %>% 
-  arrange(province)
+                            "grey50"))
+
 
 fig2.a <- ggplot(capa.melt.g, 
                  aes(x=year,
@@ -834,13 +852,14 @@ fig2.a <- ggplot(capa.melt.g,
 
 fig2.a
 
+
 ```
 
 ## Figure 2B
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("fum_spring_fall", 
+  filter(grepl("nos_spring_fum|nos_fall_fum", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -857,15 +876,26 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE",
                                    "NS", 
                                    "NL"))) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="fum_spring_fall") %>%
+  {. ->> tmp} %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL|NL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% dplyr::select(-value_weighted1, -value_weighted2) %>%
+  #---Combine totals + all provinces
+  rbind(., subset(tmp, province!="TOTAL")) %>% 
   mutate(line_width = ifelse(grepl("TOTAL", 
                                    province), 
                              1.5, 0.1)) %>% 
   mutate(line_cols = ifelse(grepl("TOTAL", 
                                   province), 
                             "green4", 
-                            "grey50")) %>% 
-  arrange(year) %>% 
-  arrange(province)
+                            "grey50"))
 
 fig2.b <-ggplot(capa.melt.g, 
                 aes(x=year, 
@@ -905,7 +935,7 @@ fig2.b
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("var_spring_fall", 
+  filter(grepl("var_spring_other|var_fall_other", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -922,15 +952,27 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE",
                                    "NS",
                                    "NL"))) %>%
+  arrange(year) %>% 
+  arrange(province) %>% 
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="var_spring_fall") %>%
+  {. ->> tmp} %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL|NL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% dplyr::select(-value_weighted1, -value_weighted2) %>%
+  #---Combine totals + all provinces
+  rbind(., subset(tmp, province!="TOTAL")) %>% 
   mutate(line_width = ifelse(grepl("TOTAL", 
                                    province),
                              1.5, 0.1)) %>% 
   mutate(line_cols = ifelse(grepl("TOTAL",
                                   province),
                             "#AC8300", 
-                            "grey50")) %>% 
-  arrange(year) %>% 
-  arrange(province)
+                            "grey50"))
+
 
 fig2.c <- ggplot(capa.melt.g, 
                  aes(x=year, 
@@ -971,7 +1013,7 @@ fig2.c
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("oxytet_spring_fall", 
+  filter(grepl("bac_spring_oxytet|bac_fall_oxytet", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1002,12 +1044,20 @@ capa.melt.g <- capa.melt.correlations %>%
                             "#2980B9", 
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(grepl("TOTAL", 
-               province)) %>% 
+  arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="oxytet_spring_fall") %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>%
   mutate(province= gsub("TOTAL", 
-                        "ANNUAL MEANS", 
+                        "WEIGHTED TOTAL", 
                         province))
+
 
 #-------------STATS
 stat.oxytet.before.after <- capa.melt.g %>% 
@@ -1101,7 +1151,7 @@ fig2.d
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("oxytet_spring_fall", 
+  filter(grepl("bac_spring_oxytet|bac_fall_oxytet", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1132,9 +1182,14 @@ capa.melt.g <- capa.melt.correlations %>%
                             "#2980B9",
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(!grepl("TOTAL", 
-                province))
+  arrange(province) %>%
+  #---Calculate annual totals for each province
+  group_by(year, province) %>%
+  mutate(value=mean(value, na.rm=TRUE)) %>% 
+  slice(1) %>% ungroup() %>% 
+  mutate(variable="oxytet_spring_fall") %>% 
+  filter(!grepl("TOTAL", province))
+
 
 #-------------STATS
 stat.oxytet.before.after <- capa.melt.g %>% 
@@ -1235,7 +1290,7 @@ fig2.e
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("fum_spring_fall", 
+  filter(grepl("nos_spring_fum|nos_fall_fum", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1266,12 +1321,20 @@ capa.melt.g <- capa.melt.correlations %>%
                             "green4", 
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(grepl("TOTAL", 
-               province)) %>% 
+  arrange(province)  %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="fum_spring_fall") %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>%
   mutate(province= gsub("TOTAL", 
-                        "ANNUAL MEANS", 
+                        "WEIGHTED TOTAL", 
                         province))
+
 
 #-------------STATS
 stat.fum.before.after <- capa.melt.g %>% 
@@ -1361,7 +1424,7 @@ fig2.f
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("fum_spring_fall", 
+  filter(grepl("nos_spring_fum|nos_fall_fum", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1392,9 +1455,13 @@ capa.melt.g <- capa.melt.correlations %>%
                             "green4",
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(!grepl("TOTAL",
-                province))
+  arrange(province) %>%
+  #---Calculate annual totals for each province
+  group_by(year, province) %>%
+  mutate(value=mean(value, na.rm=TRUE)) %>% 
+  slice(1) %>% ungroup() %>% 
+  mutate(variable="fum_spring_fall") %>% 
+  filter(!grepl("TOTAL", province))
 
 #-------------STATS
 stat.fum.before.after <- capa.melt.g %>% 
@@ -1489,7 +1556,7 @@ fig2.g
 
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("var_spring_fall", 
+  filter(grepl("var_spring_other|var_fall_other", 
                variable)) %>%
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1520,11 +1587,20 @@ capa.melt.g <- capa.melt.correlations %>%
                             "#AC8300", 
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(grepl("TOTAL", 
-               province)) %>% 
+  arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="var_spring_fall") %>%
+  #---Calculate weighted totals
+  filter(!grepl("TOTAL", province)) %>% 
+  group_by(year, variable) %>%
+  mutate(value_weighted1 = value * raw_total) %>%
+  mutate(value_weighted2 = sum(value_weighted1, na.rm=TRUE)/sum(raw_total, na.rm=TRUE)) %>%
+  mutate(value=value_weighted2) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>%
   mutate(province= gsub("TOTAL", 
-                        "ANNUAL MEANS", province))
+                        "WEIGHTED TOTAL", 
+                        province))
+
 
 #-------------STATS
 stat.var.before.after <- capa.melt.g %>% 
@@ -1616,7 +1692,7 @@ fig2.h
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=4, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("var_spring_fall", 
+  filter(grepl("var_spring_other|var_fall_other", 
                variable)) %>% 
   mutate_at(vars(value),
             as.numeric) %>% 
@@ -1646,9 +1722,14 @@ capa.melt.g <- capa.melt.correlations %>%
                             "#AC8300", 
                             "grey50")) %>%
   arrange(year) %>% 
-  arrange(province) %>% 
-  filter(!grepl("TOTAL", 
-                province))
+  arrange(province) %>%
+  #---Calculate annual totals for each province
+  group_by(year, province) %>%
+  mutate(value=mean(value, na.rm=TRUE)) %>% 
+  slice(1) %>% ungroup() %>% 
+  mutate(variable="var_spring_fall") %>% 
+  filter(!grepl("TOTAL", province))
+
 
 #-------------STATS
 stat.var.before.after <- capa.melt.g %>% 
@@ -1837,8 +1918,6 @@ print(fig2.full)
 
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=5, fig.height=5, eval=TRUE}
 
-setwd("C:/Users/Brendan Daisley/Documents/GUELPH/00-Guelph-Projects/REVIEW---2024---Antibiotics-Bee-Survey")
-
 capa.df.filt <- capa.df %>% 
   mutate_at(vars(respondent_colonies_percent,
                  bac_spring_oxytet,
@@ -1891,7 +1970,7 @@ capa.melt.correlations <- melt(capa.df.filt,
 
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("oxytet_spring_fall|^winterloss", 
+  filter(grepl("bac_spring_oxytet|bac_fall_oxytet", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -1908,8 +1987,17 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  filter(grepl("TOTAL",
-               province))
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="oxytet_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
+
+
 
 #----------------------------------------------------
 #Set functions for scaling secondary axis
@@ -1935,23 +2023,12 @@ scale_var.left = (y2_max - y2_min)/(y1_max.left - y1_min.left)
 shift_var.left = y1_min.left - y2_min
 #----------------------------------------------------
 
+#Rename column for plotting
+capa.melt.g.left <- capa.melt.g %>% dplyr::rename(usage = "value")
 
 #Plot
-capa.melt.g.x <- cbind((capa.melt.g %>% 
-                          filter(grepl("^winterloss", 
-                                       variable)) %>% 
-                          dplyr::select(year, 
-                                        province,
-                                        value) %>% 
-                          dplyr::rename(winterloss = "value")),
-                       (capa.melt.g %>% 
-                          filter(!grepl("^winterloss", 
-                                        variable)) %>% 
-                          dplyr::select(value) %>% 
-                          dplyr::rename(usage = "value"))) %>% 
-  as.data.frame()
 
-fig3.a <- ggplot(capa.melt.g.x,
+fig3.a <- ggplot(capa.melt.g.left,
                  aes(x=year, 
                      y=usage)) + 
   geom_smooth(method='loess',
@@ -2004,7 +2081,7 @@ fig3.a
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("fum_spring_fall|^winterloss", 
+  filter(grepl("nos_spring_fum|nos_fall_fum", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -2021,10 +2098,16 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  filter(grepl("TOTAL", 
-               province)) %>% 
-  arrange(year) %>% 
-  arrange(province)
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="fum_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
+
 
 #----------------------------------------------------
 #Set functions for scaling secondary axis
@@ -2048,21 +2131,10 @@ scale_var.mid = (y2_max - y2_min)/(y1_max.mid - y1_min.mid)
 shift_var.mid = y1_min.mid - y2_min
 #----------------------------------------------------
 
+#Rename column for plotting
+capa.melt.g.mid <- capa.melt.g %>% dplyr::rename(usage = "value")
 
 #Plot
-capa.melt.g.mid <- cbind((capa.melt.g %>% 
-                            filter(grepl("^winterloss", 
-                                         variable)) %>% 
-                            dplyr::select(year, 
-                                          province, 
-                                          value) %>% 
-                            dplyr::rename(winterloss = "value")),
-                         (capa.melt.g %>% 
-                            filter(!grepl("^winterloss", 
-                                          variable)) %>%
-                            dplyr::select(value) %>%
-                            dplyr::rename(usage = "value"))) %>%
-  as.data.frame()
 
 fig3.b <- ggplot(capa.melt.g.mid,  
                  aes(x=year, 
@@ -2119,7 +2191,7 @@ fig3.b
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>%
-  filter(grepl("var_spring_fall|^winterloss", 
+  filter(grepl("var_spring_other|var_fall_other", 
                variable)) %>%
   mutate_at(vars(value), 
             as.numeric) %>% 
@@ -2136,10 +2208,16 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  filter(grepl("TOTAL", 
-               province)) %>% 
-  arrange(year) %>% 
-  arrange(province)
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="var_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
+
 
 #----------------------------------------------------
 #Set functions for scaling secondary axis
@@ -2152,8 +2230,8 @@ scale_fun_inv <- function(x, scale, shift){
 }
 #---------------------------------------------------- #Specify min/max of left (y1) and right (y2) y-axes
 #Determined below values via inspection of min()/max() variables of interest
-y1_min.right  <- 50   #Miticide min
-y1_max.right  <- 100  #Miticide max
+y1_min.right  <- 55   #Miticide min
+y1_max.right  <- 105  #Miticide max
 
 y2_min <- 0  #Winterloss min
 y2_max <- 50 #Winterloss max
@@ -2164,20 +2242,10 @@ shift_var.right = y1_min.right - y2_min
 #----------------------------------------------------
 
 
+#Rename column for plotting
+capa.melt.g.right <- capa.melt.g %>% dplyr::rename(usage = "value")
+
 #Plot
-capa.melt.g.right <- cbind((capa.melt.g %>%
-                              filter(grepl("^winterloss", 
-                                           variable)) %>%
-                              dplyr::select(year, 
-                                            province, 
-                                            value) %>%
-                              dplyr::rename(winterloss = "value")),
-                           (capa.melt.g %>% 
-                              filter(!grepl("^winterloss", 
-                                            variable)) %>%
-                              dplyr::select(value) %>% 
-                              dplyr::rename(usage = "value"))) %>% 
-  as.data.frame()
 
 fig3.c <- ggplot(capa.melt.g.right,  
                  aes(x=year,
@@ -2235,42 +2303,38 @@ fig3.c
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("oxytet_spring_fall", 
-               variable)) %>%
+  filter(grepl("bac_spring_oxytet|bac_fall_oxytet", 
+               variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
-  droplevels() %>%
+  droplevels() %>% 
   mutate(province= factor(province, 
-                          levels=c("TOTAL",
+                          levels=c("TOTAL", 
                                    "BC", 
                                    "AB", 
                                    "SK",
-                                   "MB", 
+                                   "MB",
                                    "ON", 
-                                   "QC", 
+                                   "QC",
                                    "NB", 
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  mutate(line_width = ifelse(grepl("TOTAL", 
-                                   province), 
-                             2, 0.1)) %>% 
-  mutate(line_cols = ifelse(grepl("TOTAL",
-                                  province), 
-                            "#2980B9", 
-                            "grey50")) %>% 
-  arrange(year) %>%
-  arrange(province) %>%
-  group_by(year) %>%
-  mutate(value3 = mean(value, 
-                       na.rm=TRUE)) %>%
-  ungroup() %>%
-  filter(grepl("TOTAL", 
-               province))
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="oxytet_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
+
+#Plot
 
 fig3.d <- ggplot(capa.melt.g, 
                  aes(x=winterloss, 
-                     y=value3)) +
+                     y=value)) +
   smplot2::sm_statCorr(color = '#2980B9',
                        corr_method = 'pearson',
                        linetype="dashed", 
@@ -2309,16 +2373,16 @@ fig3.d
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=7, fig.height=7, eval=TRUE}
 
 capa.melt.g <- capa.melt.correlations %>% 
-  filter(grepl("fum_spring_fall",
+  filter(grepl("nos_spring_fum|nos_fall_fum", 
                variable)) %>% 
   mutate_at(vars(value), 
             as.numeric) %>% 
   droplevels() %>% 
   mutate(province= factor(province, 
                           levels=c("TOTAL", 
-                                   "BC", 
-                                   "AB", 
-                                   "SK", 
+                                   "BC",
+                                   "AB",
+                                   "SK",
                                    "MB", 
                                    "ON", 
                                    "QC", 
@@ -2326,17 +2390,17 @@ capa.melt.g <- capa.melt.correlations %>%
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  mutate(line_width = ifelse(grepl("TOTAL", 
-                                   province), 
-                             2, 0.1)) %>% 
-  mutate(line_cols = ifelse(grepl("TOTAL", 
-                                  province), 
-                            "green4", 
-                            "grey50")) %>% 
-  arrange(year) %>% 
-  arrange(province) %>% 
-  filter(grepl("TOTAL", 
-               province))
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="fum_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
+
+#Plot
 
 fig3.e <- ggplot(capa.melt.g, 
                  aes(x=winterloss, 
@@ -2381,35 +2445,35 @@ print(fig3.e)
 
 
 capa.melt.g <- capa.melt.correlations %>%
-  filter(grepl("var_spring_fall",
-               variable)) %>% mutate_at(vars(value), 
-                                        as.numeric) %>% 
+  filter(grepl("var_spring_other|var_fall_other", 
+               variable)) %>%
+  mutate_at(vars(value), 
+            as.numeric) %>% 
   droplevels() %>% 
   mutate(province= factor(province,
                           levels=c("TOTAL",
-                                   "BC", 
+                                   "BC",
                                    "AB", 
-                                   "SK", 
+                                   "SK",
                                    "MB", 
-                                   "ON", 
-                                   "QC", 
-                                   "NB", 
+                                   "ON",
+                                   "QC",
+                                   "NB",
                                    "PE", 
                                    "NS", 
                                    "NL"))) %>% 
-  mutate(line_width = ifelse(grepl("TOTAL",
-                                   province),
-                             2, 0.1)) %>% 
-  mutate(line_cols = ifelse(grepl("TOTAL",
-                                  province), 
-                            "#AC8300",
-                            "grey50")) %>% 
-  arrange(year) %>% 
-  arrange(province) %>% 
-  filter(grepl("TOTAL", 
-               province))
+  arrange(year) %>% arrange(province) %>%
+  #---Calculate national totals
+  group_by(year, province) %>%  mutate(value=mean(value, na.rm=TRUE)) %>% slice(1) %>% ungroup() %>% mutate(variable="var_spring_fall") %>%
+  filter(!grepl("TOTAL|NL", province)) %>%
+  group_by(year, variable) %>%
+  mutate(value=mean(value, na.rm=FALSE)) %>%
+  slice(1) %>% mutate(province="TOTAL") %>% ungroup() %>% 
+  #---Add winterloss data
+  mutate(winterloss=(capa.melt.correlations %>% filter(grepl("^winterloss", variable) & grepl("TOTAL", province)))$winterloss)
 
-#plot
+#Plot
+
 fig3.f <- ggplot(capa.melt.g, 
                  aes(x=winterloss, 
                      y=value)) +
@@ -2444,6 +2508,7 @@ fig3.f <- ggplot(capa.melt.g,
 fig3.f
 
 ```
+
 
 ## Table 1
 ```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=12, fig.height=10, eval=TRUE}
@@ -2521,7 +2586,7 @@ air.vars <- cbind(readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
                                    paste("winter",
                                          colnames(.)[
                                            2:length(colnames(.))
-                                           ], 
+                                         ], 
                                          sep="_"))) %>% 
                     select(-year_prov),
                   readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
@@ -2539,7 +2604,7 @@ air.vars <- cbind(readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
                                    paste("spring",
                                          colnames(.)[
                                            2:length(colnames(.))
-                                           ], 
+                                         ], 
                                          sep="_"))) %>%
                     select(-year_prov),
                   readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
@@ -2558,7 +2623,7 @@ air.vars <- cbind(readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
                                    paste("summer",
                                          colnames(.)[
                                            2:length(colnames(.))
-                                           ],
+                                         ],
                                          sep="_"))) %>% 
                     select(-year_prov),
                   readr::read_tsv("tables/air_quality_data_adj.tsv") %>% 
@@ -2577,7 +2642,7 @@ air.vars <- cbind(readr::read_tsv("tables/air_quality_data_adj.tsv") %>%
                                    paste("fall", 
                                          colnames(.)[
                                            2:length(colnames(.))
-                                           ], sep="_"))) %>% 
+                                         ], sep="_"))) %>% 
                     select(-year_prov))
 
 climate.vars <- readr::read_tsv("tables/climate_data_adj.tsv") %>%
@@ -3047,7 +3112,30 @@ sjPlot::tab_model(model_1,
 
 
 ```
-lm()
+
+## Supplementary Data 2
+
+In additional to the model evaluation above, we used the dredge() function from the MuMIn package to systematically evaluate all possible subsets of predictor variables from the global model.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=4, fig.height=4, eval=TRUE}
+
+#Running with default functions takes ~17 hours to finish.
+#dd <- dredge(model_9)
+
+#Filter select top models
+#dd.top <- as_tibble(as.data.frame(subset(dd, as.numeric(delta) < 4)))
+
+#Save top models
+#saveRDS(dd.top, "RDS/dredge_top_models.RDS")
+
+#Alternatively, load the pre-computed results table
+dd.top <- readRDS("RDS/dredge_top_models.RDS")
+
+reactable::reactable(dd.top, width=1000, striped = TRUE, highlight = TRUE)
+
+```
+
+
 
 ## Figure 3G
 
@@ -3110,7 +3198,7 @@ partR2.panel <- cowplot::plot_grid(partR2::forestplot(R2_mod,
                                    partR2::forestplot(R2_mod, 
                                                       type = "BW", 
                                                       text_size = 10)
-                                   )
+)
 
 print(partR2.panel)
 
@@ -3139,7 +3227,7 @@ R2_mod.df <- R2_mod$R2 %>%
     TRUE ~ term)) %>%
   mutate(term = factor(term, 
                        levels=rev(term)))
-  
+
 
 fig3.h <- ggplot(R2_mod.df, 
                  aes(x=relative_estimate,
@@ -3222,4 +3310,6 @@ cowplot::plot_grid(fig3.top,
 
 
 ```
+
+
 
